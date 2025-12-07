@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Artifact, ArtifactType, CoinData, CoinSize } from '../types';
 import { ArtifactRenderer } from './ArtifactRenderer';
-import { X, Trophy, DollarSign, Layers, Check, Palette, Move } from 'lucide-react';
+import { X, Check, Palette, Move } from 'lucide-react';
 
 interface InventoryViewProps {
   items: Artifact[];
@@ -17,7 +17,7 @@ interface InventoryViewProps {
   onOpenWorkbench?: () => void;
   
   // New: Manual Movement
-  manualMovement?: boolean;
+  manualMode?: boolean;
   onToggleManualMovement?: () => void;
 }
 
@@ -26,7 +26,7 @@ type SortOption = 'RECENT' | 'AGE' | 'RARITY' | 'STYLE';
 export const InventoryView: React.FC<InventoryViewProps> = ({ 
   items, onClose, mode = 'VIEW', onRevive, onSell,
   devInstantScan, onToggleDevInstantScan, onDevAddCash, onDevEnableDetector, onOpenWorkbench,
-  manualMovement, onToggleManualMovement
+  manualMode, onToggleManualMovement
 }) => {
   const [sort, setSort] = useState<SortOption>('RECENT');
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
@@ -159,9 +159,9 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                   <span className="text-zinc-400 text-xs flex items-center gap-2"><Move size={12}/> Manual Movement (Keys)</span>
                   <button 
                     onClick={onToggleManualMovement}
-                    className={`w-10 h-5 rounded-full relative transition-colors ${manualMovement ? 'bg-blue-500' : 'bg-zinc-700'}`}
+                    className={`w-10 h-5 rounded-full relative transition-colors ${manualMode ? 'bg-blue-500' : 'bg-zinc-700'}`}
                   >
-                      <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${manualMovement ? 'left-6' : 'left-1'}`}></div>
+                      <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${manualMode ? 'left-6' : 'left-1'}`}></div>
                   </button>
               </div>
 
@@ -221,15 +221,15 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
         {/* Stats Bar */}
         <div className="grid grid-cols-3 gap-2">
             <div className="bg-zinc-900/50 p-2 rounded border border-zinc-800 flex flex-col items-center">
-                <span className="text-[10px] text-zinc-500 uppercase flex items-center gap-1"><Layers size={10}/> Count</span>
+                <span className="text-[10px] text-zinc-500 uppercase flex items-center gap-1">Count</span>
                 <span className="text-white font-mono text-sm">{items.length}</span>
             </div>
             <div className="bg-zinc-900/50 p-2 rounded border border-zinc-800 flex flex-col items-center">
-                <span className="text-[10px] text-zinc-500 uppercase flex items-center gap-1"><DollarSign size={10}/> Value</span>
+                <span className="text-[10px] text-zinc-500 uppercase flex items-center gap-1">Value</span>
                 <span className="text-white font-mono text-sm">${totalValue.toLocaleString()}</span>
             </div>
             <div className="bg-zinc-900/50 p-2 rounded border border-zinc-800 flex flex-col items-center">
-                <span className="text-[10px] text-zinc-500 uppercase flex items-center gap-1"><Trophy size={10}/> Best</span>
+                <span className="text-[10px] text-zinc-500 uppercase flex items-center gap-1">Best</span>
                 <span className="text-white font-mono text-sm">${bestFind.toLocaleString()}</span>
             </div>
         </div>
@@ -256,7 +256,6 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
       <div className="flex-1 overflow-y-auto p-4 bg-black pb-32">
         {sortedItems.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-zinc-700 space-y-2 opacity-50">
-            <Layers size={48} strokeWidth={1} />
             <div className="text-xs font-mono tracking-widest">NO DATA</div>
           </div>
         ) : (

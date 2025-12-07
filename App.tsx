@@ -6,7 +6,7 @@ import { EventLog } from './components/EventLog';
 import { InventoryView } from './components/InventoryView';
 import { ArtifactRenderer } from './components/ArtifactRenderer'; 
 import { DesignWorkbench } from './components/DesignWorkbench'; 
-import { Wifi, ShoppingBag, ScanLine, MapPin, Power } from 'lucide-react';
+import { ShoppingBag, ScanLine, MapPin } from 'lucide-react';
 
 // New Imports for GPS and Storage
 import { latLonToMeters, getDistance, formatCoordinate } from './utils/geo';
@@ -362,8 +362,7 @@ export default function App() {
                 </div>
                 
                 <div className="flex items-center gap-2">
-                    <span className="text-green-500 font-bold text-xs">${balance.toLocaleString()}</span>
-                    <Wifi size={14} className={manualMode ? "text-blue-500" : "text-zinc-600"} />
+                    <span className="text-white font-bold text-xs">${balance.toLocaleString()}</span>
                 </div>
             </div>
 
@@ -389,7 +388,7 @@ export default function App() {
             {isHostile && <div className="absolute inset-0 bg-red-900/20 animate-pulse pointer-events-none"></div>}
 
             {/* The Grid */}
-            <div className="flex-1 flex items-center justify-center relative">
+            <div className="flex-1 flex items-center justify-center relative pt-12">
                 <ScannerGrid 
                     isHostile={isHostile} 
                     playerPos={pos}
