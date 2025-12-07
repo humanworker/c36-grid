@@ -20,8 +20,9 @@ export const ScannerGrid: React.FC<ScannerGridProps> = ({ isHostile, playerPos, 
   const CENTER = 150;
 
   // Grid background scrolling logic
-  const offsetX = Math.abs(playerPos.x % 15);
-  const offsetY = Math.abs(playerPos.y % 15);
+  // Remove Math.abs to allow correct directional scrolling for negative coordinates
+  const offsetX = playerPos.x % 15;
+  const offsetY = playerPos.y % 15;
   const shiftX = offsetX * PIXELS_PER_METER;
   const shiftY = offsetY * PIXELS_PER_METER;
 
@@ -36,6 +37,11 @@ export const ScannerGrid: React.FC<ScannerGridProps> = ({ isHostile, playerPos, 
         y: CENTER - relY
     };
   };
+
+  // Calculate Highlight Rectangle Position explicitly
+  const currentCellX = Math.floor(playerPos.x / 15);
+  const currentCellY = Math.floor(playerPos.y / 15);
+  const highlightPos = getScreenPos(currentCellX, currentCellY);
 
   // Helper to render icon content
   const getIconContent = (type: CellType, color: string, pulse: boolean = false) => {
@@ -81,9 +87,6 @@ export const ScannerGrid: React.FC<ScannerGridProps> = ({ isHostile, playerPos, 
   };
 
   const renderCells = () => {
-      const currentCellX = Math.floor(playerPos.x / 15);
-      const currentCellY = Math.floor(playerPos.y / 15);
-      
       const visibleRange = 2; 
       const elements = [];
 
@@ -157,21 +160,22 @@ export const ScannerGrid: React.FC<ScannerGridProps> = ({ isHostile, playerPos, 
                     />
                 </React.Fragment>
             ))}
-
-            {/* Current Cell Highlight Rectangle */}
-             <rect 
-                x={CENTER} 
-                y={CENTER - CELL_SIZE_PX} 
-                width={CELL_SIZE_PX} 
-                height={CELL_SIZE_PX} 
-                fill="none" 
-                stroke="currentColor" 
-                strokeWidth="2" 
-                className={`${isHostile ? 'text-red-500 animate-pulse' : 'text-zinc-500'}`} 
-            />
         </g>
 
-        {/* 2. Icons Layer */}
+        {/* 2. Static Overlay Layer: Current Cell Highlight */}
+        {/* We move this OUT of the scrolling group to ensure it stays anchored to the grid logic logic, not visual offset artifacts */}
+        <rect 
+            x={highlightPos.x - CELL_SIZE_PX / 2} 
+            y={highlightPos.y - CELL_SIZE_PX / 2} 
+            width={CELL_SIZE_PX} 
+            height={CELL_SIZE_PX} 
+            fill="none" 
+            stroke="currentColor" 
+            strokeWidth="2" 
+            className={`${isHostile ? 'text-red-500 animate-pulse' : 'text-zinc-500'}`} 
+        />
+
+        {/* 3. Icons Layer */}
         {renderCells()}
 
         {/* Player Position Marker - Always Center */}
