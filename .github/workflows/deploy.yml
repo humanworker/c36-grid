@@ -31,10 +31,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 18
-          cache: 'npm'
+          # Removed cache: 'npm' because package-lock.json might not exist yet
 
       - name: Install dependencies
-        # Changed from 'npm ci' to 'npm install' so it works without a package-lock.json
+        # 'npm install' will generate the lockfile on the fly if missing
         run: npm install
 
       - name: Build
