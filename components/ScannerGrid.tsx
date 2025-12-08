@@ -21,9 +21,9 @@ export const ScannerGrid: React.FC<ScannerGridProps> = ({ isHostile, playerPos, 
   const CENTER = 150; // Viewbox center (300/2)
 
   // Grid background scrolling logic
-  // Use modulo of the cell size to find offset within the current cell
-  const offsetX = Math.abs(playerPos.x % CELL_SIZE_METERS);
-  const offsetY = Math.abs(playerPos.y % CELL_SIZE_METERS);
+  // REMOVED Math.abs() to ensure correct scrolling direction for negative coordinates
+  const offsetX = playerPos.x % CELL_SIZE_METERS;
+  const offsetY = playerPos.y % CELL_SIZE_METERS;
   const shiftX = offsetX * PIXELS_PER_METER;
   const shiftY = offsetY * PIXELS_PER_METER;
 
