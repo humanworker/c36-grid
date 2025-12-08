@@ -1,7 +1,7 @@
 import { Artifact, ArtifactType } from '../types';
 import { CellType } from './gameLogic';
 
-const STORAGE_KEY = 'c36_save_v1';
+const STORAGE_KEY = 'c36_save_v2'; // Bumped version for 60m grid update
 
 export interface GameState {
     hp: number;

@@ -14,24 +14,29 @@ export const ScannerGrid: React.FC<ScannerGridProps> = ({ isHostile, playerPos, 
   const gridColor = isHostile ? "stroke-red-600" : "stroke-zinc-700";
   const playerColor = isHostile ? "fill-red-500" : "fill-white";
 
-  // Scale: 100px = 15m cell
-  const PIXELS_PER_METER = 300 / 45; // ~6.66 px/m
-  const CELL_SIZE_PX = 15 * PIXELS_PER_METER; // 100px
-  const CENTER = 150;
+  // Configuration
+  const CELL_SIZE_METERS = 60; // 60 meters per cell
+  const CELL_SIZE_PX = 100;    // 100 pixels per cell on screen
+  const PIXELS_PER_METER = CELL_SIZE_PX / CELL_SIZE_METERS; // ~1.66 px/m
+  const CENTER = 150; // Viewbox center (300/2)
 
   // Grid background scrolling logic
-  // Remove Math.abs to allow correct directional scrolling for negative coordinates
-  const offsetX = playerPos.x % 15;
-  const offsetY = playerPos.y % 15;
+  // Use modulo of the cell size to find offset within the current cell
+  const offsetX = Math.abs(playerPos.x % CELL_SIZE_METERS);
+  const offsetY = Math.abs(playerPos.y % CELL_SIZE_METERS);
   const shiftX = offsetX * PIXELS_PER_METER;
   const shiftY = offsetY * PIXELS_PER_METER;
 
   // Helper to get screen position
   const getScreenPos = (cx: number, cy: number) => {
-    const cellWorldX = cx * 15 + 7.5; 
-    const cellWorldY = cy * 15 + 7.5;
+    // World coordinates of cell center
+    const cellWorldX = cx * CELL_SIZE_METERS + (CELL_SIZE_METERS / 2); 
+    const cellWorldY = cy * CELL_SIZE_METERS + (CELL_SIZE_METERS / 2);
+    
+    // Relative position to player in pixels
     const relX = (cellWorldX - playerPos.x) * PIXELS_PER_METER;
     const relY = (cellWorldY - playerPos.y) * PIXELS_PER_METER;
+    
     return {
         x: CENTER + relX,
         y: CENTER - relY
@@ -39,8 +44,8 @@ export const ScannerGrid: React.FC<ScannerGridProps> = ({ isHostile, playerPos, 
   };
 
   // Calculate Highlight Rectangle Position explicitly
-  const currentCellX = Math.floor(playerPos.x / 15);
-  const currentCellY = Math.floor(playerPos.y / 15);
+  const currentCellX = Math.floor(playerPos.x / CELL_SIZE_METERS);
+  const currentCellY = Math.floor(playerPos.y / CELL_SIZE_METERS);
   const highlightPos = getScreenPos(currentCellX, currentCellY);
 
   // Helper to render icon content
@@ -87,7 +92,7 @@ export const ScannerGrid: React.FC<ScannerGridProps> = ({ isHostile, playerPos, 
   };
 
   const renderCells = () => {
-      const visibleRange = 2; 
+      const visibleRange = 2; // Show cells +/- 2 from center (5x5 grid)
       const elements = [];
 
       for (let cx = currentCellX - visibleRange; cx <= currentCellX + visibleRange; cx++) {

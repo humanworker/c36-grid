@@ -48,6 +48,9 @@ export default function App() {
   const keys = useRef<{ [key: string]: boolean }>({});
   const lastUpdate = useRef<number>(0);
 
+  // Constants
+  const CELL_SIZE = 60; // Meters
+
   useEffect(() => { visitedRef.current = visited; }, [visited]);
 
   // Derived Values
@@ -141,7 +144,7 @@ export default function App() {
         lastUpdate.current = time;
         let dx = 0; 
         let dy = 0;
-        const speed = 0.5; // Faster in manual mode
+        const speed = 2.0; // Faster in manual mode (covers more ground)
 
         if (keys.current['ArrowUp'] || keys.current['KeyW']) dy += speed;
         if (keys.current['ArrowDown'] || keys.current['KeyS']) dy -= speed;
@@ -169,8 +172,8 @@ export default function App() {
 
   // Update Cell
   useEffect(() => {
-    const currentCellX = Math.floor(pos.x / 15);
-    const currentCellY = Math.floor(pos.y / 15);
+    const currentCellX = Math.floor(pos.x / CELL_SIZE);
+    const currentCellY = Math.floor(pos.y / CELL_SIZE);
     if (currentCellX !== cell.x || currentCellY !== cell.y) {
         setCell({ x: currentCellX, y: currentCellY });
     }
@@ -199,7 +202,8 @@ export default function App() {
         setIsAnalyzing(false);
     } else {
         setIsAnalyzing(true);
-        const analyzeTimer = setTimeout(() => setIsAnalyzing(false), 5000);
+        // Reduced to 3 seconds
+        const analyzeTimer = setTimeout(() => setIsAnalyzing(false), 3000);
         return () => clearTimeout(analyzeTimer);
     }
   }, [cell, devInstantScan]);
@@ -208,9 +212,10 @@ export default function App() {
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
     if (isHostile && view === 'SCANNER') {
+        // Slowed down to 2000ms (2 seconds)
         interval = setInterval(() => {
             setHp(prev => Math.max(0, prev - ((L5 % 10) + 1)));
-        }, 1000);
+        }, 2000);
     }
     return () => clearInterval(interval);
   }, [isHostile, L5, view]);
