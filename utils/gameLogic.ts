@@ -32,8 +32,11 @@ export const calculateCoinScore = (coin: CoinData): number => {
 
 export const calculateCoinValue = (coin: CoinData): number => {
     const score = calculateCoinScore(coin);
-    // Return whole dollar amount
-    return Math.floor(score * 125);
+    // Exponential scale: Score 0 = $1, Score 10 = $1,000,000
+    // Formula: 10 ^ (score * 0.6)
+    // Score 5 -> 10^3 = $1,000
+    // Score 10 -> 10^6 = $1,000,000
+    return Math.floor(Math.pow(10, score * 0.6));
 };
 
 export interface MetalPalette {

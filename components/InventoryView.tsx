@@ -126,7 +126,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
           const d = artifact.data as CoinData;
           return {
               title: d.metal,
-              subtitle: `${d.year > 0 ? `${d.year} AD` : `${Math.abs(d.year)} BC`} • ${d.pattern}`
+              subtitle: `${d.year > 0 ? `${d.year} AD` : `${Math.abs(d.year)} BC`} • ${d.condition}`
           };
       }
       return { title: 'Unknown', subtitle: '???' };

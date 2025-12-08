@@ -318,6 +318,10 @@ export default function App() {
           setView('SCANNER');
       }
   };
+  
+  const formatYear = (year: number) => {
+      return year > 0 ? `${year} AD` : `${Math.abs(year)} BC`;
+  };
 
   // --- RENDERING ---
 
@@ -496,7 +500,7 @@ export default function App() {
                      <div className="text-center space-y-2 mb-8">
                         <h2 className="text-2xl font-bold text-white">{(lastDiscoveredArtifact.data as CoinData).metal} Coin</h2>
                         <p className="text-zinc-500 text-xs uppercase">
-                            {(lastDiscoveredArtifact.data as CoinData).condition} • {(lastDiscoveredArtifact.data as CoinData).year} • {(lastDiscoveredArtifact.data as CoinData).pattern}
+                            {(lastDiscoveredArtifact.data as CoinData).condition} • {formatYear((lastDiscoveredArtifact.data as CoinData).year)} • {(lastDiscoveredArtifact.data as CoinData).pattern}
                         </p>
                         <div className="inline-block px-3 py-1 bg-zinc-900 border border-zinc-800 rounded text-xs text-green-400 mt-2">
                             Val: ${lastDiscoveredArtifact.monetaryValue.toLocaleString()}
