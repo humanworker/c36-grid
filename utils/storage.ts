@@ -9,6 +9,7 @@ export interface GameState {
     inventory: Artifact[];
     visited: Record<string, CellType>;
     detectorExpiry: number | null;
+    sonarExpiry: number | null;
     manualMode: boolean; // Persist dev setting
     xp: number;
 }
@@ -35,6 +36,7 @@ export const loadGameState = (): GameState | null => {
             inventory: Array.isArray(state.inventory) ? state.inventory : [],
             visited: state.visited || {},
             detectorExpiry: state.detectorExpiry || null,
+            sonarExpiry: state.sonarExpiry || null,
             manualMode: !!state.manualMode,
             xp: typeof state.xp === 'number' ? state.xp : 0
         };

@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Artifact, ArtifactType, CoinData, CoinSize } from '../types';
 import { ArtifactRenderer } from './ArtifactRenderer';
-import { X, Check, Palette, Move, Activity } from 'lucide-react';
+import { X, Check, Palette, Move, Activity, ScanLine, Radar } from 'lucide-react';
 
 interface InventoryViewProps {
   items: Artifact[];
@@ -16,7 +16,13 @@ interface InventoryViewProps {
   devInstantScan?: boolean;
   onToggleDevInstantScan?: () => void;
   onDevAddCash?: () => void;
-  onDevEnableDetector?: () => void;
+  
+  isDetectorActive?: boolean;
+  onToggleDetector?: () => void;
+  
+  isSonarActive?: boolean;
+  onToggleSonar?: () => void;
+  
   onOpenWorkbench?: () => void;
   
   // New: Manual Movement
@@ -28,7 +34,10 @@ type SortOption = 'RECENT' | 'AGE' | 'RARITY' | 'STYLE';
 
 export const InventoryView: React.FC<InventoryViewProps> = ({ 
   items, onClose, mode = 'VIEW', onRevive, onPayRevive, onSell, balance,
-  devInstantScan, onToggleDevInstantScan, onDevAddCash, onDevEnableDetector, onOpenWorkbench,
+  devInstantScan, onToggleDevInstantScan, onDevAddCash, 
+  isDetectorActive, onToggleDetector,
+  isSonarActive, onToggleSonar,
+  onOpenWorkbench,
   manualMode, onToggleManualMovement
 }) => {
   const [sort, setSort] = useState<SortOption>('RECENT');
@@ -181,10 +190,29 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                   </button>
               </div>
 
+              {/* Metal Detector Toggle */}
+              <div className="flex items-center justify-between">
+                  <span className="text-zinc-400 text-xs flex items-center gap-2"><ScanLine size={12}/> Metal Detector</span>
+                  <button 
+                    onClick={onToggleDetector}
+                    className={`w-10 h-5 rounded-full relative transition-colors ${isDetectorActive ? 'bg-green-500' : 'bg-zinc-700'}`}
+                  >
+                      <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${isDetectorActive ? 'left-6' : 'left-1'}`}></div>
+                  </button>
+              </div>
+
+              {/* Sonar Toggle */}
+              <div className="flex items-center justify-between">
+                  <span className="text-zinc-400 text-xs flex items-center gap-2"><Radar size={12}/> Sonar</span>
+                  <button 
+                    onClick={onToggleSonar}
+                    className={`w-10 h-5 rounded-full relative transition-colors ${isSonarActive ? 'bg-indigo-500' : 'bg-zinc-700'}`}
+                  >
+                      <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${isSonarActive ? 'left-6' : 'left-1'}`}></div>
+                  </button>
+              </div>
+
               {/* Actions */}
-              <button onClick={onDevEnableDetector} className="w-full bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold py-3 rounded uppercase border border-zinc-600">
-                  Enable Metal Detector
-              </button>
               <button onClick={onDevAddCash} className="w-full bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold py-3 rounded uppercase border border-zinc-600">
                   Add $10,000 Cash
               </button>

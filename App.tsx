@@ -6,7 +6,7 @@ import { EventLog } from './components/EventLog';
 import { InventoryView } from './components/InventoryView';
 import { ArtifactRenderer } from './components/ArtifactRenderer'; 
 import { DesignWorkbench } from './components/DesignWorkbench'; 
-import { ShoppingBag, ScanLine, MapPin } from 'lucide-react';
+import { ShoppingBag, ScanLine, MapPin, Radar } from 'lucide-react';
 
 // New Imports for GPS and Storage
 import { latLonToMeters, getDistance } from './utils/geo';
@@ -25,6 +25,7 @@ export default function App() {
   const [inventory, setInventory] = useState<Artifact[]>([]);
   const [visited, setVisited] = useState<VisitedMap>({});
   const [detectorExpiry, setDetectorExpiry] = useState<number | null>(null);
+  const [sonarExpiry, setSonarExpiry] = useState<number | null>(null);
   const [xp, setXp] = useState(0);
   
   // Ephemeral State
@@ -45,14 +46,19 @@ export default function App() {
 
   // Refs for logic
   const visitedRef = useRef(visited);
+  const posRef = useRef(pos); // Ref for Sonar to access latest pos without restarting loop
   const lastGpsUpdate = useRef<{ x: number, y: number } | null>(null);
   const keys = useRef<{ [key: string]: boolean }>({});
   const lastUpdate = useRef<number>(0);
+  
+  // Audio Context Ref for Sonar
+  const audioCtxRef = useRef<AudioContext | null>(null);
 
   // Constants
   const CELL_SIZE = 60; // Meters
 
   useEffect(() => { visitedRef.current = visited; }, [visited]);
+  useEffect(() => { posRef.current = pos; }, [pos]);
 
   // Derived Values
   const isHostile = cellType === 'HOSTILE';
@@ -61,8 +67,13 @@ export default function App() {
   const I5 = Math.abs(cell.x) % 10;
   const currentKey = `${cell.x},${cell.y}`;
   const isVisited = !!visited[currentKey];
+  
+  // Tool Status
   const isDetectorActive = detectorExpiry !== null && now < detectorExpiry;
   const detectorTimeLeft = detectorExpiry ? Math.max(0, Math.ceil((detectorExpiry - now) / 1000)) : 0;
+  
+  const isSonarActive = sonarExpiry !== null && now < sonarExpiry;
+  const sonarTimeLeft = sonarExpiry ? Math.max(0, Math.ceil((sonarExpiry - now) / 1000)) : 0;
   
   // Leveling Maths
   const currentLevel = Math.floor(xp / XP_VALUES.LEVEL_THRESHOLD) + 1;
@@ -82,6 +93,7 @@ export default function App() {
           setInventory(saved.inventory);
           setVisited(saved.visited);
           setDetectorExpiry(saved.detectorExpiry);
+          setSonarExpiry(saved.sonarExpiry);
           setManualMode(saved.manualMode);
           setXp(saved.xp);
           addLog("System: Save State Loaded.");
@@ -99,10 +111,11 @@ export default function App() {
           inventory,
           visited,
           detectorExpiry,
+          sonarExpiry,
           manualMode,
           xp
       });
-  }, [hp, balance, inventory, visited, detectorExpiry, manualMode, view, xp]);
+  }, [hp, balance, inventory, visited, detectorExpiry, sonarExpiry, manualMode, view, xp]);
 
 
   // --- 3. MOVEMENT ENGINE (GPS + MANUAL) ---
@@ -255,9 +268,115 @@ export default function App() {
     return () => clearInterval(timer);
   }, [view, addLog]);
 
+  // --- SONAR AUDIO LOGIC ---
+  const playBeep = () => {
+    if (!audioCtxRef.current) {
+        // Fix TS error: webkitAudioContext not on Window
+        audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+    }
+    const ctx = audioCtxRef.current;
+    if (ctx.state === 'suspended') ctx.resume();
+
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(1200, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(600, ctx.currentTime + 0.1);
+    
+    gain.gain.setValueAtTime(0.1, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
+
+    osc.start();
+    osc.stop(ctx.currentTime + 0.1);
+  };
+
+  // Sonar Loop
+  useEffect(() => {
+      let timeoutId: ReturnType<typeof setTimeout>;
+      let isRunning = true;
+
+      const pingLoop = () => {
+          if (!isRunning) return;
+          if (!isSonarActive || view !== 'SCANNER') {
+              timeoutId = setTimeout(pingLoop, 1000);
+              return;
+          }
+
+          const currentPos = posRef.current; // Get latest meter position directly
+          const cx = Math.floor(currentPos.x / CELL_SIZE);
+          const cy = Math.floor(currentPos.y / CELL_SIZE);
+          
+          // Radial Scan: Check 9x9 area (approx 240m radius) for candidate cells
+          let minDistanceMeters = Infinity;
+          
+          for (let dx = -4; dx <= 4; dx++) {
+              for (let dy = -4; dy <= 4; dy++) {
+                  const targetX = cx + dx;
+                  const targetY = cy + dy;
+                  const targetKey = `${targetX},${targetY}`;
+
+                  // Only check unvisited COINs
+                  if (!visitedRef.current[targetKey]) {
+                       // Deterministic check (lightweight)
+                       const type = getCellType(targetX, targetY);
+                       if (type === 'COIN') {
+                           // Calculate center of target cell in Meters
+                           const cellCenterX = (targetX * CELL_SIZE) + (CELL_SIZE / 2);
+                           const cellCenterY = (targetY * CELL_SIZE) + (CELL_SIZE / 2);
+                           
+                           // Euclidean Distance
+                           const dist = Math.sqrt(
+                               Math.pow(cellCenterX - currentPos.x, 2) + 
+                               Math.pow(cellCenterY - currentPos.y, 2)
+                           );
+                           
+                           if (dist < minDistanceMeters) {
+                               minDistanceMeters = dist;
+                           }
+                       }
+                  }
+              }
+          }
+
+          // Max Audible Range: 200 Meters
+          const MAX_RANGE = 200; 
+          
+          if (minDistanceMeters <= MAX_RANGE) {
+              playBeep();
+              
+              // Linear Mapping:
+              // 0m (On top of it) -> 150ms
+              // 200m (Barely visible) -> 2000ms
+              const t = minDistanceMeters / MAX_RANGE; // 0.0 to 1.0
+              const interval = 150 + (t * 1850); 
+              
+              timeoutId = setTimeout(pingLoop, interval);
+          } else {
+              // Nothing nearby, check again in 1s
+              timeoutId = setTimeout(pingLoop, 1000); 
+          }
+      };
+
+      pingLoop();
+
+      return () => {
+          isRunning = false;
+          clearTimeout(timeoutId);
+      };
+  }, [isSonarActive, view]); // Removed 'cell' dependency so it doesn't glitch on cell crossing
+
 
   // --- 5. ACTIONS ---
   const handleStart = () => {
+      // Resume Audio Context if exists
+      if (audioCtxRef.current?.state === 'suspended') {
+          audioCtxRef.current.resume();
+      }
+
       // Request Permission
       if ('geolocation' in navigator) {
           navigator.geolocation.getCurrentPosition(
@@ -344,6 +463,16 @@ export default function App() {
           setXp(p => p + XP_VALUES.BUY_DETECTOR);
       }
   };
+
+  const buySonar = () => {
+      if (balance >= 2500) {
+          setBalance(prev => prev - 2500);
+          setSonarExpiry(Date.now() + 5 * 60 * 1000); // 5 minutes
+          addLog(`Sonar Module Active. +${XP_VALUES.BUY_SONAR} XP.`);
+          setView('SCANNER');
+          setXp(p => p + XP_VALUES.BUY_SONAR);
+      }
+  };
   
   const formatYear = (year: number) => {
       return year > 0 ? `${year} AD` : `${Math.abs(year)} BC`;
@@ -426,6 +555,14 @@ export default function App() {
                         <span>{Math.floor(detectorTimeLeft/60)}:{(detectorTimeLeft%60).toString().padStart(2,'0')}</span>
                     </div>
                  )}
+
+                 {/* Sonar Timer */}
+                 {isSonarActive && (
+                    <div className="flex items-center gap-2 text-[10px] text-indigo-400 bg-indigo-900/20 px-2 py-1 rounded border border-indigo-900/50 animate-in fade-in slide-in-from-top-1">
+                        <Radar size={10} />
+                        <span>{Math.floor(sonarTimeLeft/60)}:{(sonarTimeLeft%60).toString().padStart(2,'0')}</span>
+                    </div>
+                 )}
             </div>
       </div>
 
@@ -484,8 +621,14 @@ export default function App() {
                 onToggleDevInstantScan={() => setDevInstantScan(!devInstantScan)}
                 manualMode={manualMode}
                 onToggleManualMovement={() => setManualMode(!manualMode)}
+                
+                isDetectorActive={isDetectorActive}
+                onToggleDetector={() => setDetectorExpiry(isDetectorActive ? null : Date.now() + 10 * 60 * 1000)}
+                
+                isSonarActive={isSonarActive}
+                onToggleSonar={() => setSonarExpiry(isSonarActive ? null : Date.now() + 5 * 60 * 1000)}
+                
                 onDevAddCash={() => { setBalance(b => b+10000); addLog("DEV: +$10k"); }}
-                onDevEnableDetector={() => { setDetectorExpiry(Date.now()+600000); addLog("DEV: Detector ON"); }}
                 onOpenWorkbench={() => setView('WORKBENCH')}
             />
       )}
@@ -496,29 +639,57 @@ export default function App() {
             <div className="absolute inset-0 z-50 bg-black/95 flex flex-col items-center justify-center p-6 animate-in fade-in zoom-in duration-300">
                     <ShoppingBag size={48} className="text-white mb-6" />
                     
-                    <div className="bg-zinc-900 border border-zinc-700 p-4 rounded-lg w-full mb-8 flex items-center justify-between mt-8">
-                    <div className="flex items-center gap-3">
-                            <div className="bg-green-900/30 p-2 rounded text-green-400">
-                            <ScanLine size={24} />
+                    <div className="w-full space-y-4 mb-8">
+                        {/* Metal Detector */}
+                        <div className="bg-zinc-900 border border-zinc-700 p-4 rounded-lg flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                    <div className="bg-green-900/30 p-2 rounded text-green-400">
+                                    <ScanLine size={24} />
+                                    </div>
+                                    <div className="text-left">
+                                        <div className="text-white text-sm font-bold">Metal Detector</div>
+                                        <div className="text-zinc-500 text-[10px]">10m Battery Life</div>
+                                    </div>
                             </div>
-                            <div className="text-left">
-                                <div className="text-white text-sm font-bold">Metal Detector</div>
-                                <div className="text-zinc-500 text-[10px]">10m Battery Life</div>
+                            <div className="flex flex-col items-end gap-2">
+                                <span className="text-green-400 font-mono text-sm">$5,000</span>
+                                <button 
+                                    onClick={buyDetector}
+                                    disabled={balance < 5000}
+                                    className={`bg-white text-black text-[10px] font-bold px-3 py-1 rounded uppercase tracking-wider ${balance < 5000 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-zinc-200'}`}
+                                >
+                                    Buy
+                                </button>
                             </div>
-                    </div>
-                    <div className="text-green-400 font-mono text-sm">$5,000</div>
+                        </div>
+
+                        {/* Sonar */}
+                        <div className="bg-zinc-900 border border-zinc-700 p-4 rounded-lg flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                    <div className="bg-indigo-900/30 p-2 rounded text-indigo-400">
+                                    <Radar size={24} />
+                                    </div>
+                                    <div className="text-left">
+                                        <div className="text-white text-sm font-bold">Sonar Module</div>
+                                        <div className="text-zinc-500 text-[10px]">5m Battery Life</div>
+                                    </div>
+                            </div>
+                            <div className="flex flex-col items-end gap-2">
+                                <span className="text-green-400 font-mono text-sm">$2,500</span>
+                                <button 
+                                    onClick={buySonar}
+                                    disabled={balance < 2500}
+                                    className={`bg-white text-black text-[10px] font-bold px-3 py-1 rounded uppercase tracking-wider ${balance < 2500 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-zinc-200'}`}
+                                >
+                                    Buy
+                                </button>
+                            </div>
+                        </div>
                     </div>
 
                     <button 
-                    onClick={buyDetector}
-                    disabled={balance < 5000}
-                    className={`w-full bg-white text-black font-bold py-3 rounded uppercase text-xs tracking-widest mb-4 ${balance < 5000 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-zinc-200'}`}
-                    >
-                    Purchase
-                    </button>
-                    <button 
                     onClick={() => setView('SCANNER')}
-                    className="text-zinc-500 text-xs hover:text-white"
+                    className="text-zinc-500 text-xs hover:text-white mt-4"
                     >
                     LEAVE
                     </button>

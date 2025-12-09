@@ -11,6 +11,7 @@ export const XP_VALUES = {
     SCAN_ITEM: 10,
     SCAN_FOOD: 10,
     BUY_DETECTOR: 100,
+    BUY_SONAR: 100,
     DEATH_PENALTY: 500,
     LEVEL_THRESHOLD: 1000
 };
