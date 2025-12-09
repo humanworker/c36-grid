@@ -1,7 +1,8 @@
 {
   "name": "C-36 Grid",
   "short_name": "C-36",
-  "start_url": ".",
+  "start_url": "/c36-grid/",
+  "scope": "/c36-grid/",
   "display": "standalone",
   "background_color": "#000000",
   "theme_color": "#000000",
