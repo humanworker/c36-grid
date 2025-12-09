@@ -186,7 +186,7 @@ export default function App() {
     const key = `${cell.x},${cell.y}`;
     
     if (type === 'HOSTILE') {
-        if (!visitedRef.current[key]) addLog(`WARNING: Unstable Sector Entered.`);
+        if (!visitedRef.current[key]) addLog("Warning you are in a Hostile area. Get out!");
         setVisited(prev => ({ ...prev, [key]: 'HOSTILE' }));
     }
     
@@ -279,7 +279,7 @@ export default function App() {
     if (isVisited) return; 
 
     if (cellType === 'EMPTY') {
-        addLog(`Sector Empty.`);
+        addLog(`Area Empty.`);
         setVisited(p => ({...p, [currentKey]: 'EMPTY'}));
     } else if (cellType === 'FOOD') {
         const heal = (I5 * 2.5) + 10;
@@ -426,7 +426,7 @@ export default function App() {
                         : 'bg-white text-black disabled:bg-zinc-800 disabled:text-zinc-500 hover:bg-zinc-200' 
                     }`}
                 >
-                    {hp <= 0 ? 'Exhausted' : isAnalyzing ? 'Analyzing...' : isShop && isVisited ? 'Enter Shop' : isVisited ? 'Sector Cleared' : 'Excavate'}
+                    {hp <= 0 ? 'Exhausted' : isAnalyzing ? 'Analyzing...' : isShop && isVisited ? 'Enter Shop' : isVisited ? 'Area Cleared' : 'Excavate'}
                 </button>
             </div>
       </div>
@@ -453,9 +453,6 @@ export default function App() {
 
       {view === 'SHOP' && (
             <div className="absolute inset-0 z-50 bg-black/95 flex flex-col items-center justify-center p-6 animate-in fade-in zoom-in duration-300">
-                    <div className="text-white text-sm tracking-widest uppercase mb-8 border-b border-white pb-2">
-                    Signal Intercepted
-                    </div>
                     <ShoppingBag size={48} className="text-white mb-6" />
                     <h2 className="text-xl font-bold text-white mb-2">You have found a shop</h2>
                     
@@ -490,7 +487,9 @@ export default function App() {
 
       {view === 'DISCOVERY' && lastDiscoveredArtifact && (
             <div className="absolute inset-0 z-50 bg-black/95 flex flex-col items-center justify-center p-6 animate-in fade-in zoom-in duration-300">
-                <div className="text-white text-sm tracking-widest uppercase mb-8 border-b border-white pb-2">Artifact Recovered</div>
+                <div className="text-white text-sm tracking-widest uppercase mb-8 border-b border-white pb-2">
+                    {lastDiscoveredArtifact.type} FOUND
+                </div>
                 
                 <div className="w-64 h-64 flex items-center justify-center mb-8">
                     <ArtifactRenderer artifact={lastDiscoveredArtifact} />

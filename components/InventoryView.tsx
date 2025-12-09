@@ -302,7 +302,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                             <span className="text-[10px] text-white font-bold truncate">{details.title}</span>
                             <span className="text-[10px] text-white font-mono">${item.monetaryValue.toLocaleString()}</span>
                         </div>
-                        <div className="text-[8px] text-zinc-600 truncate">
+                        <div className="text-[8px] text-white truncate">
                             {details.subtitle}
                         </div>
                     </div>
