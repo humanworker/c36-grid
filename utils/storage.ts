@@ -10,6 +10,7 @@ export interface GameState {
     visited: Record<string, CellType>;
     detectorExpiry: number | null;
     manualMode: boolean; // Persist dev setting
+    xp: number;
 }
 
 export const saveGameState = (state: GameState) => {
@@ -34,7 +35,8 @@ export const loadGameState = (): GameState | null => {
             inventory: Array.isArray(state.inventory) ? state.inventory : [],
             visited: state.visited || {},
             detectorExpiry: state.detectorExpiry || null,
-            manualMode: !!state.manualMode
+            manualMode: !!state.manualMode,
+            xp: typeof state.xp === 'number' ? state.xp : 0
         };
     } catch (e) {
         console.error("Failed to load game", e);

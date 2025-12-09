@@ -4,6 +4,17 @@ import {
     METAL_WEIGHTS, CONDITION_SCORES 
 } from '../types';
 
+// --- CONFIGURATION ---
+
+export const XP_VALUES = {
+    SCAN_EMPTY: 1,
+    SCAN_ITEM: 10,
+    SCAN_FOOD: 10,
+    BUY_DETECTOR: 100,
+    DEATH_PENALTY: 500,
+    LEVEL_THRESHOLD: 1000
+};
+
 // --- COIN SPECIFIC MATH ---
 
 /**

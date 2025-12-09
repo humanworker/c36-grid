@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Artifact, CoinData, ArtifactType } from './types'; 
-import { generateArtifact, getCellType, CellType } from './utils/gameLogic';
+import { generateArtifact, getCellType, CellType, XP_VALUES } from './utils/gameLogic';
 import { ScannerGrid } from './components/ScannerGrid';
 import { EventLog } from './components/EventLog';
 import { InventoryView } from './components/InventoryView';
@@ -25,6 +25,7 @@ export default function App() {
   const [inventory, setInventory] = useState<Artifact[]>([]);
   const [visited, setVisited] = useState<VisitedMap>({});
   const [detectorExpiry, setDetectorExpiry] = useState<number | null>(null);
+  const [xp, setXp] = useState(0);
   
   // Ephemeral State
   const [logs, setLogs] = useState<string[]>([]);
@@ -62,6 +63,11 @@ export default function App() {
   const isVisited = !!visited[currentKey];
   const isDetectorActive = detectorExpiry !== null && now < detectorExpiry;
   const detectorTimeLeft = detectorExpiry ? Math.max(0, Math.ceil((detectorExpiry - now) / 1000)) : 0;
+  
+  // Leveling Maths
+  const currentLevel = Math.floor(xp / XP_VALUES.LEVEL_THRESHOLD) + 1;
+  const xpInCurrentLevel = xp % XP_VALUES.LEVEL_THRESHOLD;
+  const levelProgress = (xpInCurrentLevel / XP_VALUES.LEVEL_THRESHOLD) * 100;
 
   const addLog = useCallback((msg: string) => {
     setLogs(prev => [...prev.slice(-49), msg]); 
@@ -77,6 +83,7 @@ export default function App() {
           setVisited(saved.visited);
           setDetectorExpiry(saved.detectorExpiry);
           setManualMode(saved.manualMode);
+          setXp(saved.xp);
           addLog("System: Save State Loaded.");
       } else {
           addLog("System: Initial Boot Sequence.");
@@ -92,9 +99,10 @@ export default function App() {
           inventory,
           visited,
           detectorExpiry,
-          manualMode
+          manualMode,
+          xp
       });
-  }, [hp, balance, inventory, visited, detectorExpiry, manualMode, view]);
+  }, [hp, balance, inventory, visited, detectorExpiry, manualMode, view, xp]);
 
 
   // --- 3. MOVEMENT ENGINE (GPS + MANUAL) ---
@@ -238,12 +246,14 @@ export default function App() {
              // Only trigger exhaustion if we aren't already there and not on start screen
              if (h <= 0 && view !== 'EXHAUSTION' && view !== 'START') {
                 setView('EXHAUSTION');
+                setXp(prev => Math.max(0, prev - XP_VALUES.DEATH_PENALTY));
+                addLog(`Vital Signs Critical. -${XP_VALUES.DEATH_PENALTY} XP.`);
              }
              return h;
         });
     }, 1000);
     return () => clearInterval(timer);
-  }, [view]);
+  }, [view, addLog]);
 
 
   // --- 5. ACTIONS ---
@@ -280,20 +290,23 @@ export default function App() {
     if (isVisited) return; 
 
     if (cellType === 'EMPTY') {
-        addLog(`Area Empty.`);
+        addLog(`Area Empty. +${XP_VALUES.SCAN_EMPTY} XP.`);
         setVisited(p => ({...p, [currentKey]: 'EMPTY'}));
+        setXp(p => p + XP_VALUES.SCAN_EMPTY);
     } else if (cellType === 'FOOD') {
         const heal = (I5 * 2.5) + 10;
         setHp(prev => Math.min(100, prev + heal));
-        addLog(`Rations Found. +${heal.toFixed(0)} HP.`);
+        addLog(`Rations Found. +${heal.toFixed(0)} HP / +${XP_VALUES.SCAN_FOOD} XP.`);
         setVisited(p => ({...p, [currentKey]: 'FOOD'}));
+        setXp(p => p + XP_VALUES.SCAN_FOOD);
     } else if (cellType === 'COIN') {
         const newArtifact = generateArtifact(cell.x, cell.y);
         setLastDiscoveredArtifact(newArtifact);
         setInventory(prev => [newArtifact, ...prev]);
         setView('DISCOVERY');
-        addLog(`Excavation Successful.`);
+        addLog(`Excavation Successful. +${XP_VALUES.SCAN_ITEM} XP.`);
         setVisited(p => ({...p, [currentKey]: 'COIN'}));
+        setXp(p => p + XP_VALUES.SCAN_ITEM);
     }
   };
 
@@ -326,8 +339,9 @@ export default function App() {
       if (balance >= 5000) {
           setBalance(prev => prev - 5000);
           setDetectorExpiry(Date.now() + 10 * 60 * 1000); 
-          addLog("Metal Detector Equipped.");
+          addLog(`Metal Detector Equipped. +${XP_VALUES.BUY_DETECTOR} XP.`);
           setView('SCANNER');
+          setXp(p => p + XP_VALUES.BUY_DETECTOR);
       }
   };
   
@@ -387,12 +401,17 @@ export default function App() {
                 </div>
             </div>
 
-            {/* Coordinates & Status */}
-            <div className="flex justify-between items-end">
-                 <div className="text-[10px] text-zinc-600 flex flex-col">
-                     {gps && <span className="flex items-center gap-1"><MapPin size={8}/> {formatCoordinate(gps.lat, gps.lon)}</span>}
-                     <span>GRID: {Math.floor(pos.x)}, {Math.floor(pos.y)}</span>
+            {/* Bottom Row: Levels and Status */}
+            <div className="flex justify-between items-end mt-1">
+                 {/* Level Progress Bar */}
+                 <div className="flex items-center gap-2 text-xs font-bold text-yellow-500">
+                    <span>LVL {currentLevel}</span>
+                    <div className="w-24 h-2 bg-zinc-900 rounded-full overflow-hidden border border-zinc-800">
+                        <div className="h-full bg-yellow-600" style={{ width: `${levelProgress}%` }}></div>
+                    </div>
                  </div>
+
+                 {/* Detector Timer */}
                  {isDetectorActive && (
                     <div className="flex items-center gap-2 text-[10px] text-green-400 bg-green-900/20 px-2 py-1 rounded border border-green-900/50">
                         <ScanLine size={10} />
