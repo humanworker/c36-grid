@@ -9,7 +9,7 @@ import { DesignWorkbench } from './components/DesignWorkbench';
 import { ShoppingBag, ScanLine, MapPin } from 'lucide-react';
 
 // New Imports for GPS and Storage
-import { latLonToMeters, getDistance, formatCoordinate } from './utils/geo';
+import { latLonToMeters, getDistance } from './utils/geo';
 import { loadGameState, saveGameState } from './utils/storage';
 
 type ViewState = 'START' | 'SCANNER' | 'INVENTORY' | 'DISCOVERY' | 'EXHAUSTION' | 'SHOP' | 'WORKBENCH';
@@ -386,34 +386,42 @@ export default function App() {
     <div className="fixed inset-0 bg-black text-white font-mono overflow-hidden">
       
       {/* 1. HUD HEADER */}
-      <div className="absolute top-0 left-0 w-full p-4 z-20 pointer-events-none bg-gradient-to-b from-black to-transparent">
-            {/* Top Row: HP and Balance */}
-            <div className="flex items-center justify-between mb-2">
-                <div className={`flex items-center gap-2 text-xs font-bold ${hp < 20 ? 'text-red-500 animate-pulse' : 'text-white'}`}>
-                    <span>HP {hp.toFixed(0)}</span>
+      <div className="absolute top-0 left-0 w-full p-4 z-20 pointer-events-none bg-gradient-to-b from-black to-transparent flex justify-between items-start">
+            
+            {/* LEFT COLUMN: Stats (HP & LVL) */}
+            <div className="flex flex-col gap-1.5">
+                {/* HP BAR ROW */}
+                <div className={`flex items-center gap-3 text-xs font-bold transition-colors duration-300 ${hp < 20 ? 'text-red-500 animate-pulse' : 'text-white'}`}>
+                    <span className="w-12 text-right tabular-nums">HP {hp.toFixed(0)}</span>
                     <div className="w-24 h-2 bg-zinc-900 rounded-full overflow-hidden border border-zinc-800">
-                        <div className={`h-full ${hp < 20 ? 'bg-red-600' : 'bg-white'}`} style={{ width: `${hp}%` }}></div>
+                        <div 
+                            className={`h-full transition-all duration-300 ${hp < 20 ? 'bg-red-600' : 'bg-white'}`} 
+                            style={{ width: `${hp}%` }}
+                        ></div>
                     </div>
                 </div>
-                
-                <div className="flex items-center gap-2">
-                    <span className="text-white font-bold text-xs">${balance.toLocaleString()}</span>
+
+                {/* LVL BAR ROW */}
+                <div className="flex items-center gap-3 text-xs font-bold text-yellow-500">
+                    <span className="w-12 text-right tabular-nums">LVL {currentLevel}</span>
+                    <div className="w-24 h-2 bg-zinc-900 rounded-full overflow-hidden border border-zinc-800">
+                        <div 
+                            className="h-full bg-yellow-600 transition-all duration-500" 
+                            style={{ width: `${levelProgress}%` }}
+                        ></div>
+                    </div>
                 </div>
             </div>
 
-            {/* Bottom Row: Levels and Status */}
-            <div className="flex justify-between items-end mt-1">
-                 {/* Level Progress Bar */}
-                 <div className="flex items-center gap-2 text-xs font-bold text-yellow-500">
-                    <span>LVL {currentLevel}</span>
-                    <div className="w-24 h-2 bg-zinc-900 rounded-full overflow-hidden border border-zinc-800">
-                        <div className="h-full bg-yellow-600" style={{ width: `${levelProgress}%` }}></div>
-                    </div>
-                 </div>
+            {/* RIGHT COLUMN: Info (Balance & Timer) */}
+            <div className="flex flex-col items-end gap-2">
+                <div className="flex items-center gap-2">
+                    <span className="text-white font-bold text-xs">${balance.toLocaleString()}</span>
+                </div>
 
                  {/* Detector Timer */}
                  {isDetectorActive && (
-                    <div className="flex items-center gap-2 text-[10px] text-green-400 bg-green-900/20 px-2 py-1 rounded border border-green-900/50">
+                    <div className="flex items-center gap-2 text-[10px] text-green-400 bg-green-900/20 px-2 py-1 rounded border border-green-900/50 animate-in fade-in slide-in-from-top-1">
                         <ScanLine size={10} />
                         <span>{Math.floor(detectorTimeLeft/60)}:{(detectorTimeLeft%60).toString().padStart(2,'0')}</span>
                     </div>
