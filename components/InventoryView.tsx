@@ -1,14 +1,17 @@
 import React, { useMemo, useState } from 'react';
 import { Artifact, ArtifactType, CoinData, CoinSize } from '../types';
 import { ArtifactRenderer } from './ArtifactRenderer';
-import { X, Check, Palette, Move } from 'lucide-react';
+import { X, Check, Palette, Move, Activity } from 'lucide-react';
 
 interface InventoryViewProps {
   items: Artifact[];
   onClose: () => void;
   mode?: 'VIEW' | 'REVIVE' | 'SELL';
   onRevive?: (selectedArtifacts: Artifact[]) => void;
+  onPayRevive?: () => void; // New Direct Pay Handler
   onSell?: (selectedArtifacts: Artifact[]) => void;
+  balance: number; // Add balance to props
+  
   // Dev props
   devInstantScan?: boolean;
   onToggleDevInstantScan?: () => void;
@@ -24,7 +27,7 @@ interface InventoryViewProps {
 type SortOption = 'RECENT' | 'AGE' | 'RARITY' | 'STYLE'; 
 
 export const InventoryView: React.FC<InventoryViewProps> = ({ 
-  items, onClose, mode = 'VIEW', onRevive, onSell,
+  items, onClose, mode = 'VIEW', onRevive, onPayRevive, onSell, balance,
   devInstantScan, onToggleDevInstantScan, onDevAddCash, onDevEnableDetector, onOpenWorkbench,
   manualMode, onToggleManualMovement
 }) => {
@@ -90,16 +93,29 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
   const isRevive = currentMode === 'REVIVE';
   const isSell = currentMode === 'SELL';
   const REVIVE_COST = 1000;
-  const isBankrupt = totalValue < REVIVE_COST;
-  const reviveTarget = isBankrupt ? totalValue : REVIVE_COST;
   
-  const canRevive = isRevive && (selectedValue >= reviveTarget || (isBankrupt && Math.abs(selectedValue - totalValue) < 1));
+  // Revive Logic
+  const canAffordCash = balance >= REVIVE_COST;
+  const isBankrupt = !canAffordCash && (balance + totalValue < REVIVE_COST);
+  const reviveTarget = canAffordCash ? 0 : REVIVE_COST - balance; // How much we need to sell
+  
+  // If we can afford cash, we don't need to select items
+  // If we can't afford cash, we need to select items >= reviveTarget
+  const canRevive = isRevive && (canAffordCash || (selectedValue >= reviveTarget || (isBankrupt && Math.abs(selectedValue - totalValue) < 1)));
+  
   const canSell = isSell && selectedIndices.size > 0;
 
   const handleAction = () => {
-      const selection = items.filter((_, idx) => selectedIndices.has(idx));
-      if (isRevive && onRevive) onRevive(selection);
+      if (isRevive) {
+          if (canAffordCash && onPayRevive) {
+              onPayRevive();
+          } else if (onRevive) {
+              const selection = items.filter((_, idx) => selectedIndices.has(idx));
+              onRevive(selection);
+          }
+      }
       if (isSell && onSell) {
+          const selection = items.filter((_, idx) => selectedIndices.has(idx));
           onSell(selection);
           setSelectedIndices(new Set());
           setInternalMode('VIEW');
@@ -211,120 +227,148 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
             </div>
         </div>
         
-        {isRevive && (
+        {isRevive && !canAffordCash && (
              <div className="text-xs text-zinc-400 font-mono mb-2">
-                Operator Exhausted. Sell <span className="text-white">${reviveTarget.toLocaleString()}</span> to restore systems.
+                Operator Exhausted. Sell <span className="text-white">${reviveTarget.toLocaleString()}</span> to pay medical bill.
                 {isBankrupt && <div className="text-red-500 mt-1">INSUFFICIENT FUNDS: TOTAL LIQUIDATION REQUIRED.</div>}
             </div>
         )}
 
-        {/* Stats Bar */}
-        <div className="grid grid-cols-3 gap-2">
-            <div className="bg-zinc-900/50 p-2 rounded border border-zinc-800 flex flex-col items-center">
-                <span className="text-[10px] text-zinc-500 uppercase flex items-center gap-1">Count</span>
-                <span className="text-white font-mono text-sm">{items.length}</span>
+        {/* Stats Bar (Hidden in Revive Mode if we are paying cash) */}
+        {!(isRevive && canAffordCash) && (
+            <div className="grid grid-cols-3 gap-2">
+                <div className="bg-zinc-900/50 p-2 rounded border border-zinc-800 flex flex-col items-center">
+                    <span className="text-[10px] text-zinc-500 uppercase flex items-center gap-1">Count</span>
+                    <span className="text-white font-mono text-sm">{items.length}</span>
+                </div>
+                <div className="bg-zinc-900/50 p-2 rounded border border-zinc-800 flex flex-col items-center">
+                    <span className="text-[10px] text-zinc-500 uppercase flex items-center gap-1">Value</span>
+                    <span className="text-white font-mono text-sm">${totalValue.toLocaleString()}</span>
+                </div>
+                <div className="bg-zinc-900/50 p-2 rounded border border-zinc-800 flex flex-col items-center">
+                    <span className="text-[10px] text-zinc-500 uppercase flex items-center gap-1">Best</span>
+                    <span className="text-white font-mono text-sm">${bestFind.toLocaleString()}</span>
+                </div>
             </div>
-            <div className="bg-zinc-900/50 p-2 rounded border border-zinc-800 flex flex-col items-center">
-                <span className="text-[10px] text-zinc-500 uppercase flex items-center gap-1">Value</span>
-                <span className="text-white font-mono text-sm">${totalValue.toLocaleString()}</span>
-            </div>
-            <div className="bg-zinc-900/50 p-2 rounded border border-zinc-800 flex flex-col items-center">
-                <span className="text-[10px] text-zinc-500 uppercase flex items-center gap-1">Best</span>
-                <span className="text-white font-mono text-sm">${bestFind.toLocaleString()}</span>
-            </div>
-        </div>
+        )}
 
         {/* Sort Tabs */}
-        <div className="flex gap-2 text-[10px] overflow-x-auto no-scrollbar">
-            {(['RECENT', 'AGE', 'RARITY', 'STYLE'] as SortOption[]).map((opt) => (
-                <button 
-                    key={opt}
-                    onClick={() => setSort(opt)}
-                    className={`px-3 py-1 rounded border transition-colors whitespace-nowrap ${
-                        sort === opt 
-                        ? 'bg-zinc-100 text-black border-zinc-100 font-bold' 
-                        : 'bg-transparent text-gray-500 border-zinc-800 hover:border-zinc-500'
-                    }`}
-                >
-                    {opt}
-                </button>
-            ))}
-        </div>
+        {!(isRevive && canAffordCash) && (
+            <div className="flex gap-2 text-[10px] overflow-x-auto no-scrollbar">
+                {(['RECENT', 'AGE', 'RARITY', 'STYLE'] as SortOption[]).map((opt) => (
+                    <button 
+                        key={opt}
+                        onClick={() => setSort(opt)}
+                        className={`px-3 py-1 rounded border transition-colors whitespace-nowrap ${
+                            sort === opt 
+                            ? 'bg-zinc-100 text-black border-zinc-100 font-bold' 
+                            : 'bg-transparent text-gray-500 border-zinc-800 hover:border-zinc-500'
+                        }`}
+                    >
+                        {opt}
+                    </button>
+                ))}
+            </div>
+        )}
       </div>
 
-      {/* Grid Content */}
-      <div className="flex-1 overflow-y-auto p-4 bg-black pb-32">
-        {sortedItems.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-zinc-700 space-y-2 opacity-50">
-            <div className="text-xs font-mono tracking-widest">NO DATA</div>
-          </div>
+      {/* Grid Content OR Pay Bill Overlay */}
+      <div className="flex-1 overflow-y-auto p-4 bg-black pb-32 relative">
+        
+        {/* Simple Pay Overlay */}
+        {isRevive && canAffordCash ? (
+             <div className="absolute inset-0 flex flex-col items-center justify-center p-8 text-center space-y-8">
+                 <div className="p-4 bg-red-900/20 rounded-full animate-pulse">
+                    <Activity size={48} className="text-red-500" />
+                 </div>
+                 <div className="space-y-2">
+                     <h3 className="text-xl font-bold text-white uppercase tracking-widest">Medical Assistance</h3>
+                     <p className="text-zinc-500 text-xs max-w-xs mx-auto">
+                         You have suffered from exhaustion. Immediate medical attention is required to restore systems.
+                     </p>
+                 </div>
+                 <div className="text-2xl font-mono text-red-500 font-bold">
+                     Cost: ${REVIVE_COST.toLocaleString()}
+                 </div>
+             </div>
         ) : (
-          <div className="grid grid-cols-3 gap-3">
-            {sortedItems.map(({ item, originalIndex }, idx) => {
-              const isSelected = selectedIndices.has(originalIndex);
-              const details = getArtifactDetails(item);
-              
-              return (
-                <button 
-                    key={item.id} // Use stable ID
-                    onClick={() => toggleSelection(originalIndex)}
-                    disabled={currentMode === 'VIEW'}
-                    className={`flex flex-col gap-2 group relative text-left ${currentMode === 'VIEW' ? 'cursor-default' : 'cursor-pointer'}`}
-                >
-                    {/* Thumbnail */}
-                    <div className={`aspect-square bg-zinc-900 rounded-lg border relative overflow-hidden flex items-center justify-center transition-all ${
-                        isSelected 
-                            ? 'border-white border-4 bg-zinc-800' 
-                            : 'border-zinc-800 group-hover:border-zinc-600'
-                    }`}>
-                         {/* Selection Overlay */}
-                         {isSelected && (
-                             <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/10">
-                                 <div className="bg-black rounded-full p-1">
-                                    <Check size={20} className="text-white" strokeWidth={4} />
-                                 </div>
-                             </div>
-                         )}
+            // Standard Grid
+            sortedItems.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center text-zinc-700 space-y-2 opacity-50">
+                <div className="text-xs font-mono tracking-widest">NO DATA</div>
+            </div>
+            ) : (
+            <div className="grid grid-cols-3 gap-3">
+                {sortedItems.map(({ item, originalIndex }, idx) => {
+                const isSelected = selectedIndices.has(originalIndex);
+                const details = getArtifactDetails(item);
+                
+                return (
+                    <button 
+                        key={item.id} // Use stable ID
+                        onClick={() => toggleSelection(originalIndex)}
+                        disabled={currentMode === 'VIEW'}
+                        className={`flex flex-col gap-2 group relative text-left ${currentMode === 'VIEW' ? 'cursor-default' : 'cursor-pointer'}`}
+                    >
+                        {/* Thumbnail */}
+                        <div className={`aspect-square bg-zinc-900 rounded-lg border relative overflow-hidden flex items-center justify-center transition-all ${
+                            isSelected 
+                                ? 'border-white border-4 bg-zinc-800' 
+                                : 'border-zinc-800 group-hover:border-zinc-600'
+                        }`}>
+                            {/* Selection Overlay */}
+                            {isSelected && (
+                                <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/10">
+                                    <div className="bg-black rounded-full p-1">
+                                        <Check size={20} className="text-white" strokeWidth={4} />
+                                    </div>
+                                </div>
+                            )}
 
-                         {/* Artifact Render using Switchboard */}
-                         <div className={`aspect-square flex items-center justify-center pointer-events-none transition-opacity ${isSelected ? 'opacity-60' : 'opacity-100'} ${getSizeClass(item)}`}>
-                            <ArtifactRenderer artifact={item} className="w-full h-full" />
-                        </div>
+                            {/* Artifact Render using Switchboard */}
+                            <div className={`aspect-square flex items-center justify-center pointer-events-none transition-opacity ${isSelected ? 'opacity-60' : 'opacity-100'} ${getSizeClass(item)}`}>
+                                <ArtifactRenderer artifact={item} className="w-full h-full" />
+                            </div>
 
-                        {/* Rarity Badge */}
-                        <div className="absolute top-1 right-1 px-1 bg-black/80 border border-zinc-800 rounded text-[9px] text-yellow-500 font-mono backdrop-blur-sm">
-                            {item.rarityScore.toFixed(1)}
+                            {/* Rarity Badge */}
+                            <div className="absolute top-1 right-1 px-1 bg-black/80 border border-zinc-800 rounded text-[9px] text-yellow-500 font-mono backdrop-blur-sm">
+                                {item.rarityScore.toFixed(1)}
+                            </div>
                         </div>
-                    </div>
-                    {/* Details */}
-                    <div className="px-1">
-                        <div className="flex justify-between items-baseline">
-                            <span className="text-[10px] text-white font-bold truncate">{details.title}</span>
-                            <span className="text-[10px] text-white font-mono">${item.monetaryValue.toLocaleString()}</span>
+                        {/* Details */}
+                        <div className="px-1">
+                            <div className="flex justify-between items-baseline">
+                                <span className="text-[10px] text-white font-bold truncate">{details.title}</span>
+                                <span className="text-[10px] text-white font-mono">${item.monetaryValue.toLocaleString()}</span>
+                            </div>
+                            <div className="text-[8px] text-white truncate">
+                                {details.subtitle}
+                            </div>
                         </div>
-                        <div className="text-[8px] text-white truncate">
-                            {details.subtitle}
-                        </div>
-                    </div>
-                </button>
-              );
-            })}
-          </div>
+                    </button>
+                );
+                })}
+            </div>
+            )
         )}
       </div>
 
       {/* Footer Action */}
       {(isRevive || isSell) && (
           <div className="absolute bottom-0 left-0 w-full bg-zinc-900 border-t border-zinc-800 p-4 pb-8 shadow-xl z-50">
-              <div className="flex justify-between text-xs font-mono mb-2">
-                  <span className="text-zinc-400">Selected:</span>
-                  <div className="flex gap-2">
-                    <span className={selectedValue >= (isRevive ? reviveTarget : 0) ? "text-green-400" : "text-white"}>
-                        ${selectedValue.toLocaleString()} 
-                    </span>
-                    {isRevive && <span className="text-zinc-500">/ ${reviveTarget.toLocaleString()}</span>}
-                  </div>
-              </div>
+              {/* Only show selection stats if we are NOT paying direct cash */}
+              {!(isRevive && canAffordCash) && (
+                  <div className="flex justify-between text-xs font-mono mb-2">
+                    <span className="text-zinc-400">Selected:</span>
+                    <div className="flex gap-2">
+                        <span className={selectedValue >= (isRevive ? reviveTarget : 0) ? "text-green-400" : "text-white"}>
+                            ${selectedValue.toLocaleString()} 
+                        </span>
+                        {isRevive && <span className="text-zinc-500">/ ${reviveTarget.toLocaleString()}</span>}
+                    </div>
+                </div>
+              )}
+              
               <button
                 onClick={handleAction}
                 disabled={isRevive ? !canRevive : !canSell}
@@ -334,7 +378,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                     : 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
                 }`}
               >
-                  {isRevive ? (isBankrupt && !canRevive ? 'Select All' : 'Sell & Revive') : 'Confirm Sale'}
+                  {isRevive ? (canAffordCash ? 'PAY BILL ($1,000)' : isBankrupt && !canRevive ? 'Select All' : 'Liquidate & Pay') : 'Confirm Sale'}
               </button>
           </div>
       )}

@@ -208,7 +208,7 @@ export default function App() {
     }
   }, [cell, devInstantScan]);
 
-  // Hostile Damage
+  // Hostile Damage - STRICTLY PAUSED WHEN NOT IN SCANNER
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
     if (isHostile && view === 'SCANNER') {
@@ -220,7 +220,7 @@ export default function App() {
     return () => clearInterval(interval);
   }, [isHostile, L5, view]);
 
-  // Passive HP Drain
+  // Passive HP Drain - STRICTLY PAUSED WHEN NOT IN SCANNER
   useEffect(() => {
       const metabolicInterval = setInterval(() => {
           if (view === 'SCANNER' && hp > 0) {
@@ -235,6 +235,7 @@ export default function App() {
     const timer = setInterval(() => {
         setNow(Date.now());
         setHp(h => {
+             // Only trigger exhaustion if we aren't already there and not on start screen
              if (h <= 0 && view !== 'EXHAUSTION' && view !== 'START') {
                 setView('EXHAUSTION');
              }
@@ -298,9 +299,20 @@ export default function App() {
 
   const handleRevive = (itemsToSell: Artifact[]) => {
       handleSell(itemsToSell);
+      // Deduct the medical bill ($1000)
+      setBalance(prev => prev - 1000);
       setHp(50);
       setView('SCANNER');
       addLog("Medical Bill Paid.");
+  };
+
+  const handleDirectPayRevive = () => {
+      if (balance >= 1000) {
+          setBalance(prev => prev - 1000);
+          setHp(50);
+          setView('SCANNER');
+          addLog("Medical Bill Paid.");
+      }
   };
 
   const handleSell = (itemsToSell: Artifact[]) => {
@@ -438,7 +450,9 @@ export default function App() {
                 onClose={() => setView('SCANNER')} 
                 mode={view === 'EXHAUSTION' ? 'REVIVE' : 'VIEW'}
                 onRevive={handleRevive}
+                onPayRevive={handleDirectPayRevive}
                 onSell={handleSell}
+                balance={balance}
                 devInstantScan={devInstantScan}
                 onToggleDevInstantScan={() => setDevInstantScan(!devInstantScan)}
                 manualMode={manualMode}
@@ -454,7 +468,6 @@ export default function App() {
       {view === 'SHOP' && (
             <div className="absolute inset-0 z-50 bg-black/95 flex flex-col items-center justify-center p-6 animate-in fade-in zoom-in duration-300">
                     <ShoppingBag size={48} className="text-white mb-6" />
-                    <h2 className="text-xl font-bold text-white mb-2">You have found a shop</h2>
                     
                     <div className="bg-zinc-900 border border-zinc-700 p-4 rounded-lg w-full mb-8 flex items-center justify-between mt-8">
                     <div className="flex items-center gap-3">

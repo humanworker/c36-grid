@@ -208,9 +208,9 @@ export const getCellType = (cellX: number, cellY: number): CellType => {
     const random0to1 = sin - Math.floor(sin);
     const masterScore = Math.floor(random0to1 * 100);
 
-    if (masterScore >= 90) return 'HOSTILE';
-    if (masterScore >= 80) return 'COIN';
-    if (masterScore >= 60) return 'FOOD';
-    if (masterScore === 59) return 'SHOP';
-    return 'EMPTY';
+    if (masterScore >= 90) return 'HOSTILE'; // 10%
+    if (masterScore >= 80) return 'COIN';    // 10%
+    if (masterScore >= 70) return 'FOOD';    // 10% (Reduced from 20%)
+    if (masterScore === 59) return 'SHOP';   // 1%
+    return 'EMPTY';                          // 69%
 };
