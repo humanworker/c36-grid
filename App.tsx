@@ -396,6 +396,8 @@ export default function App() {
 
   const handleDevBypass = () => {
       setManualMode(true);
+      // Initialize a default GPS location so the map layer works
+      setGps({ lat: 51.505, lon: -0.09 }); 
       setView('SCANNER');
       addLog("DEV: System Bypassed. Manual Mode ON.");
   };
@@ -570,20 +572,23 @@ export default function App() {
       <div className={`absolute inset-0 flex flex-col transition-opacity duration-500 ${view === 'SCANNER' ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
             
             {/* Background Hostile Effect */}
-            {isHostile && <div className="absolute inset-0 bg-red-900/20 animate-pulse pointer-events-none"></div>}
+            {isHostile && <div className="absolute inset-0 bg-red-900/20 animate-pulse pointer-events-none z-10"></div>}
 
             {/* The Grid */}
-            <div className="flex-1 flex items-center justify-center relative pt-12">
+            <div className="flex-1 flex items-center justify-center relative">
                 <ScannerGrid 
                     isHostile={isHostile} 
                     playerPos={pos}
                     visited={visited}
                     isDetectorActive={isDetectorActive}
+                    gps={gps}
                 />
             </div>
 
             {/* Log */}
-            <EventLog logs={logs} />
+            <div className="z-20">
+               <EventLog logs={logs} />
+            </div>
 
             {/* Controls */}
             <div className="p-6 pb-8 bg-black flex gap-4 items-center border-t border-zinc-900 z-30">

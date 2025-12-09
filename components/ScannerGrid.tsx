@@ -1,15 +1,19 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { CellType, getCellType } from '../utils/gameLogic';
 import { Skull, ShoppingBag } from 'lucide-react';
+
+// Declare Leaflet global
+declare const L: any;
 
 interface ScannerGridProps {
   isHostile: boolean;
   playerPos: { x: number, y: number };
   visited: Record<string, CellType>;
   isDetectorActive: boolean;
+  gps: { lat: number, lon: number } | null;
 }
 
-export const ScannerGrid: React.FC<ScannerGridProps> = ({ isHostile, playerPos, visited, isDetectorActive }) => {
+export const ScannerGrid: React.FC<ScannerGridProps> = ({ isHostile, playerPos, visited, isDetectorActive, gps }) => {
   // Grid lines color
   const gridColor = isHostile ? "stroke-red-600" : "stroke-zinc-700";
   const playerColor = isHostile ? "fill-red-500" : "fill-white";
@@ -19,6 +23,56 @@ export const ScannerGrid: React.FC<ScannerGridProps> = ({ isHostile, playerPos, 
   const CELL_SIZE_PX = 100;    // 100 pixels per cell on screen
   const PIXELS_PER_METER = CELL_SIZE_PX / CELL_SIZE_METERS; // ~1.66 px/m
   const CENTER = 150; // Viewbox center (300/2)
+
+  // Map Refs
+  const mapRef = useRef<any>(null);
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+
+  // Map Initialization
+  useEffect(() => {
+    if (!mapContainerRef.current || mapRef.current) return;
+    
+    // Check if Leaflet is loaded
+    if (typeof L === 'undefined') return;
+
+    // Create Map
+    const map = L.map(mapContainerRef.current, {
+        attributionControl: false,
+        zoomControl: false,
+        zoomAnimation: false,
+        fadeAnimation: true,
+        inertia: false,
+        keyboard: false,
+        dragging: false,
+        touchZoom: false,
+        scrollWheelZoom: false,
+        doubleClickZoom: false,
+        boxZoom: false,
+        tap: false
+    });
+    
+    // CartoDB Dark Matter (API-Key-Free alternative to Stadia for easy setup)
+    // To use Stadia, swap the URL to: https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        maxZoom: 20,
+        subdomains: 'abcd'
+    }).addTo(map);
+
+    mapRef.current = map;
+
+    return () => {
+        map.remove();
+        mapRef.current = null;
+    };
+  }, []);
+
+  // Sync Map with GPS
+  useEffect(() => {
+      if (mapRef.current && gps) {
+          mapRef.current.setView([gps.lat, gps.lon], 18); // Zoom 18 matches ~60m scale reasonably well
+      }
+  }, [gps]);
+
 
   // Grid background scrolling logic
   // REMOVED Math.abs() to ensure correct scrolling direction for negative coordinates
@@ -133,59 +187,73 @@ export const ScannerGrid: React.FC<ScannerGridProps> = ({ isHostile, playerPos, 
   };
 
   return (
-    <div className="w-full aspect-square relative flex items-center justify-center p-4 overflow-hidden">
-      <svg width="100%" height="100%" viewBox="0 0 300 300" className="overflow-hidden">
-        <defs>
-            <pattern id="smallGrid" width="10" height="10" patternUnits="userSpaceOnUse">
-                 <path d="M 10 0 L 0 0 0 10" fill="none" stroke="currentColor" strokeWidth="0.5" className="text-zinc-900"/>
-            </pattern>
-        </defs>
+    <div className="w-full h-full relative flex items-center justify-center overflow-hidden bg-black">
+      
+      {/* 1. MAP LAYER (Background) */}
+      <div 
+        ref={mapContainerRef} 
+        className="absolute inset-0 z-0 opacity-40 grayscale mix-blend-screen"
+        style={{ pointerEvents: 'none' }} 
+      />
 
-        {/* 1. Moving Background Grid Layer */}
-        <g transform={`translate(${-shiftX}, ${shiftY})`}>
-            {/* Base Texture */}
-            <rect x="-150" y="-150" width="600" height="600" fill="url(#smallGrid)" />
-            
-            {/* Grid Lines */}
-            {[...Array(5)].map((_, i) => (
-                <React.Fragment key={i}>
-                    {/* Vertical */}
-                    <line 
-                        x1={CENTER + (i-2)*CELL_SIZE_PX} y1="-150" 
-                        x2={CENTER + (i-2)*CELL_SIZE_PX} y2="450" 
-                        className={`${gridColor} transition-colors duration-300`} 
-                        strokeWidth="1" strokeDasharray="4 4" 
-                    />
-                    {/* Horizontal */}
-                    <line 
-                        x1="-150" y1={CENTER + (i-2)*CELL_SIZE_PX} 
-                        x2="450" y2={CENTER + (i-2)*CELL_SIZE_PX} 
-                        className={`${gridColor} transition-colors duration-300`} 
-                        strokeWidth="1" strokeDasharray="4 4" 
-                    />
-                </React.Fragment>
-            ))}
-        </g>
+      {/* 2. TORCH VIGNETTE (Overlay on Map) */}
+      {/* Creates the flashlight effect where only the center is visible */}
+      <div 
+        className="absolute inset-0 z-0 pointer-events-none"
+        style={{ background: 'radial-gradient(circle at center, transparent 15%, #000 85%)' }}
+      ></div>
 
-        {/* 2. Static Overlay Layer: Current Cell Highlight */}
-        {/* We move this OUT of the scrolling group to ensure it stays anchored to the grid logic logic, not visual offset artifacts */}
-        <rect 
-            x={highlightPos.x - CELL_SIZE_PX / 2} 
-            y={highlightPos.y - CELL_SIZE_PX / 2} 
-            width={CELL_SIZE_PX} 
-            height={CELL_SIZE_PX} 
-            fill="none" 
-            stroke="currentColor" 
-            strokeWidth="2" 
-            className={`${isHostile ? 'text-red-500 animate-pulse' : 'text-zinc-500'}`} 
-        />
+      {/* 3. GRID & UI (Foreground) */}
+      <div className="w-full aspect-square relative flex items-center justify-center p-4 z-10">
+        <svg width="100%" height="100%" viewBox="0 0 300 300" className="overflow-visible">
+            <defs>
+                <pattern id="smallGrid" width="10" height="10" patternUnits="userSpaceOnUse">
+                    <path d="M 10 0 L 0 0 0 10" fill="none" stroke="currentColor" strokeWidth="0.5" className="text-zinc-900"/>
+                </pattern>
+            </defs>
 
-        {/* 3. Icons Layer */}
-        {renderCells()}
+            {/* Moving Grid Layer */}
+            <g transform={`translate(${-shiftX}, ${shiftY})`}>
+                {/* Grid Lines */}
+                {[...Array(5)].map((_, i) => (
+                    <React.Fragment key={i}>
+                        {/* Vertical */}
+                        <line 
+                            x1={CENTER + (i-2)*CELL_SIZE_PX} y1="-150" 
+                            x2={CENTER + (i-2)*CELL_SIZE_PX} y2="450" 
+                            className={`${gridColor} transition-colors duration-300`} 
+                            strokeWidth="1" strokeDasharray="4 4" 
+                        />
+                        {/* Horizontal */}
+                        <line 
+                            x1="-150" y1={CENTER + (i-2)*CELL_SIZE_PX} 
+                            x2="450" y2={CENTER + (i-2)*CELL_SIZE_PX} 
+                            className={`${gridColor} transition-colors duration-300`} 
+                            strokeWidth="1" strokeDasharray="4 4" 
+                        />
+                    </React.Fragment>
+                ))}
+            </g>
 
-        {/* Player Position Marker - Always Center */}
-        <circle cx="150" cy="150" r="4" className={`${playerColor} transition-colors duration-300 drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]`} />
-      </svg>
+            {/* Static Overlay Layer: Current Cell Highlight */}
+            <rect 
+                x={highlightPos.x - CELL_SIZE_PX / 2} 
+                y={highlightPos.y - CELL_SIZE_PX / 2} 
+                width={CELL_SIZE_PX} 
+                height={CELL_SIZE_PX} 
+                fill="none" 
+                stroke="currentColor" 
+                strokeWidth="2" 
+                className={`${isHostile ? 'text-red-500 animate-pulse' : 'text-zinc-500'}`} 
+            />
+
+            {/* Icons Layer */}
+            {renderCells()}
+
+            {/* Player Position Marker - Always Center */}
+            <circle cx="150" cy="150" r="4" className={`${playerColor} transition-colors duration-300 drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]`} />
+        </svg>
+      </div>
     </div>
   );
 };
