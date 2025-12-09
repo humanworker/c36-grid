@@ -1,16 +1,11 @@
 import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
     return {
-      // This base path matches your GitHub repository name
-      base: '/c36-grid/', 
+      base: '/c36-grid/', // <--- ADD THIS LINE
       server: {
         port: 3000,
         host: '0.0.0.0',
