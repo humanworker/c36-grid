@@ -1,18 +1,11 @@
 import React, { useId, useMemo } from 'react';
-import { CoinData, CoinSize, CoinBorder, CoinPattern, CoinCondition } from '../types';
-import { getMetalPalette, adjustColor } from '../utils/gameLogic';
+import { CoinData, CoinSize, CoinBorder, CoinVisualOverrides, CoinCondition } from '../types';
+import { getMetalPalette, adjustColor, seededRandom } from '../utils/gameLogic';
 
 interface CoinRenderProps {
   data: CoinData;
+  overrides?: CoinVisualOverrides;
 }
-
-// Simple Pseudo-Random Number Generator for deterministic visuals
-const seededRandom = (seed: number) => {
-    let t = seed += 0x6D2B79F5;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-};
 
 // Map existing patterns to "DNA" for the Floral Generator
 const getPatternDNA = (patternName: string): [number, number, number, number] => {
@@ -26,8 +19,11 @@ const getPatternDNA = (patternName: string): [number, number, number, number] =>
     return [rng(1), rng(2), rng(3), rng(4)];
 };
 
-export const CoinRender: React.FC<CoinRenderProps> = ({ data }) => {
+export const CoinRender: React.FC<CoinRenderProps> = ({ data, overrides }) => {
   const uniquePrefix = useId(); 
+
+  // MERGE OVERRIDES: Props > Data.Overrides > Undefined
+  const mergedOverrides = overrides || data.visualOverrides;
 
   // --- 1. Dimensions ---
   const getSizeInPixels = (s: CoinSize) => {
@@ -42,28 +38,39 @@ export const CoinRender: React.FC<CoinRenderProps> = ({ data }) => {
   const diameter = getSizeInPixels(data.size);
   const radius = diameter / 2;
   const borderWidth = data.border === CoinBorder.Thin ? 4 : data.border === CoinBorder.Wide ? 24 : 12;
-  const palette = getMetalPalette(data.metal);
+  
+  // Color Palette Construction
+  const palette = useMemo(() => {
+    const std = getMetalPalette(data.metal);
+    return {
+        base: mergedOverrides?.customBaseColor || std.base,
+        dark: mergedOverrides?.customDarkColor || std.dark,
+        shine: mergedOverrides?.customShineColor || std.shine
+    };
+  }, [data.metal, mergedOverrides]);
+
   const innerRadius = radius - borderWidth;
   const patternRadius = innerRadius * 0.85; 
 
-  // --- 2. Irregular Shape Generator (Age Based) ---
+  // --- 2. Irregular Shape Generator (Age Based or Overridden) ---
   const shapePath = useMemo(() => {
-    // If Modern (post 1700), perfect circle
-    if (data.year >= 1700) {
-        return `M ${radius} 0 A ${radius} ${radius} 0 1 1 ${radius} ${diameter} A ${radius} ${radius} 0 1 1 ${radius} 0 Z`;
+    let maxJitter = 0;
+    
+    if (mergedOverrides?.shapeJitter !== undefined) {
+        maxJitter = mergedOverrides.shapeJitter;
+    } else {
+        if (data.year < 1700) {
+            const ageFactor = Math.min(1, Math.max(0, (1700 - data.year) / 2200));
+            maxJitter = ageFactor * 6;
+        }
     }
 
-    // Irregular Polygon for older coins
-    // Irregularity factor increases with age
-    // 1700 AD -> 0
-    // 500 BC -> Max
-    const ageFactor = Math.min(1, Math.max(0, (1700 - data.year) / 2200));
-    const maxJitter = ageFactor * 6; // Max 6px jitter for very old coins
-    
-    // Seed based on coin properties so it's consistent
+    if (maxJitter === 0 && data.year >= 1700 && mergedOverrides?.shapeJitter === undefined) {
+         return `M ${radius} 0 A ${radius} ${radius} 0 1 1 ${radius} ${diameter} A ${radius} ${radius} 0 1 1 ${radius} 0 Z`;
+    }
+
     const seedBase = data.metal.length + data.year + data.pattern.length;
-    
-    const points = 36; // Number of vertices
+    const points = 36; 
     let d = "";
     
     for (let i = 0; i < points; i++) {
@@ -78,7 +85,7 @@ export const CoinRender: React.FC<CoinRenderProps> = ({ data }) => {
     d += " Z";
     return d;
 
-  }, [data.year, radius, diameter, data.metal, data.pattern]);
+  }, [data.year, radius, diameter, data.metal, data.pattern, mergedOverrides?.shapeJitter]);
 
 
   // --- 3. Procedural Pattern Generator (Floral Engine) ---
@@ -88,33 +95,30 @@ export const CoinRender: React.FC<CoinRenderProps> = ({ data }) => {
       const map = (n: number, s1: number, st1: number, s2: number, st2: number) => 
         ((n - s1) / (st1 - s1)) * (st2 - s2) + s2;
 
-      const numPetals = Math.floor(map(v1, 0, 35, 3, 16));
-      const petalLen = map(v2, 0, 35, patternRadius * 0.4, patternRadius * 0.9);
-      const petalWidth = map(v2, 0, 35, patternRadius * 0.1, patternRadius * 0.5);
-      const sharpness = map(v2 % 10, 0, 9, 0.1, 1.5);
+      const numPetals = mergedOverrides?.petalCount ?? Math.floor(map(v1, 0, 35, 3, 16));
+      const petalLen = mergedOverrides?.petalLength ? mergedOverrides.petalLength * patternRadius : map(v2, 0, 35, patternRadius * 0.4, patternRadius * 0.9);
+      const petalWidth = mergedOverrides?.petalWidth ? mergedOverrides.petalWidth * patternRadius : map(v2, 0, 35, patternRadius * 0.1, patternRadius * 0.5);
+      const sharpness = mergedOverrides?.petalSharpness ?? map(v2 % 10, 0, 9, 0.1, 1.5);
       
-      const innerLines = Math.floor(map(v3, 0, 35, 0, 5));
-      const innerLineLen = map(v3, 0, 35, 0.2, 0.9);
+      const innerLines = mergedOverrides?.innerLines ?? Math.floor(map(v3, 0, 35, 0, 5));
+      const innerLineLen = mergedOverrides?.innerLineLen ?? map(v3, 0, 35, 0.2, 0.9);
       
-      const centerRadius = map(v4, 0, 35, patternRadius * 0.1, patternRadius * 0.3);
-      const centerStyle = v4 % 3;
+      const centerRadius = mergedOverrides?.centerRadius ? mergedOverrides.centerRadius * patternRadius : map(v4, 0, 35, patternRadius * 0.1, patternRadius * 0.3);
+      const centerStyle = mergedOverrides?.centerStyle ?? (v4 % 3);
 
       let d = "";
 
-      // Petals
       const angleStep = (Math.PI * 2) / numPetals;
       for (let i = 0; i < numPetals; i++) {
           const rotation = i * angleStep;
           const cos = Math.cos(rotation);
           const sin = Math.sin(rotation);
           
-          // Helper to rotate point
           const rot = (x: number, y: number) => ({
               x: radius + (x * cos - y * sin),
               y: radius + (x * sin + y * cos)
           });
 
-          // Petal Shape
           let cpX = petalWidth * sharpness;
           let cpY = centerRadius + (petalLen / 2);
           
@@ -127,13 +131,11 @@ export const CoinRender: React.FC<CoinRenderProps> = ({ data }) => {
           d += ` Q ${cp1.x} ${cp1.y} ${pTip.x} ${pTip.y}`;
           d += ` Q ${cp2.x} ${cp2.y} ${pStart.x} ${pStart.y}`;
 
-          // Inner Lines (Engraving)
           if (innerLines > 0) {
               for (let j = 1; j <= innerLines; j++) {
                   let scale = j / (innerLines + 1);
                   let subLen = petalLen * innerLineLen;
                   
-                  // Interpolate control points
                   let iCpX = (cpX * scale) * 0.8;
                   let iCpY = centerRadius + (subLen / 2);
                   
@@ -149,10 +151,9 @@ export const CoinRender: React.FC<CoinRenderProps> = ({ data }) => {
           }
       }
 
-      // Center
-      const centerPath = ` M ${radius + centerRadius} ${radius} A ${centerRadius} ${centerRadius} 0 1 0 ${radius - centerRadius} ${radius} A ${centerRadius} ${centerRadius} 0 1 0 ${radius + centerRadius} ${radius}`;
+      // Center path (For Hole Masking)
+      const centerPath = `M ${radius + centerRadius} ${radius} A ${centerRadius} ${centerRadius} 0 1 0 ${radius - centerRadius} ${radius} A ${centerRadius} ${centerRadius} 0 1 0 ${radius + centerRadius} ${radius}`;
       
-      // Center Details
       if (centerStyle === 1) { // Rings
          let rings = Math.floor(map(v4, 0, 35, 1, 3));
          for(let k=1; k<=rings; k++) {
@@ -166,133 +167,174 @@ export const CoinRender: React.FC<CoinRenderProps> = ({ data }) => {
              let ang = (Math.PI * 2 / dots) * k;
              let dx = radius + Math.cos(ang) * dotRad;
              let dy = radius + Math.sin(ang) * dotRad;
-             // Draw tiny circle approx 2px
              d += ` M ${dx + 2} ${dy} A 2 2 0 1 0 ${dx - 2} ${dy} A 2 2 0 1 0 ${dx + 2} ${dy}`;
          }
       }
 
       return { d, centerPath };
 
-  }, [data.pattern, radius, patternRadius]);
+  }, [data.pattern, radius, patternRadius, mergedOverrides]);
 
-  // --- 4. IDs ---
+  // --- 4. Render IDs ---
   const gradientId = `grad-${uniquePrefix}`;
   const clipId = `clip-${uniquePrefix}`;
-  const filterId = `scratch-${uniquePrefix}`;
+  const holeMaskId = `hole-${uniquePrefix}`;
+  const erosionMaskId = `erode-${uniquePrefix}`;
+  const grainId = `grain-${uniquePrefix}`;
+  const grimeId = `grime-${uniquePrefix}`;
 
-  // --- 5. Configs ---
-  const conditionConfig = useMemo(() => {
+  // --- 5. Configuration & Visual Tuning ---
+  const config = useMemo(() => {
      switch (data.condition) {
-      // Scratches: Low freq X, High freq Y creates streaks
-      case CoinCondition.Poor: return { opacity: 0.8, freq: "0.05 2.5", oct: 3 }; 
-      case CoinCondition.Good: return { opacity: 0.6, freq: "0.1 2.0", oct: 2 };
-      case CoinCondition.Fine: return { opacity: 0.4, freq: "0.2 1.5", oct: 2 };
-      case CoinCondition.VeryFine: return { opacity: 0.2, freq: "0.5 1.0", oct: 1 };
-      case CoinCondition.NearMint: return { opacity: 0.1, freq: "0.8 1.0", oct: 1 };
-      case CoinCondition.Mint: return { opacity: 0.0, freq: "1.0", oct: 1 };
+      case CoinCondition.Poor:     return { erosion: 0.85, grime: 0.6, luster: 0.1, shineSharpness: 0, noiseFreq: 0.8 }; 
+      case CoinCondition.Good:     return { erosion: 0.60, grime: 0.4, luster: 0.3, shineSharpness: 0, noiseFreq: 0.6 };
+      case CoinCondition.Fine:     return { erosion: 0.30, grime: 0.3, luster: 0.5, shineSharpness: 0.1, noiseFreq: 0.5 };
+      case CoinCondition.VeryFine: return { erosion: 0.10, grime: 0.2, luster: 0.7, shineSharpness: 0.3, noiseFreq: 0.4 };
+      case CoinCondition.NearMint: return { erosion: 0.02, grime: 0.1, luster: 0.9, shineSharpness: 0.6, noiseFreq: 0.3 };
+      case CoinCondition.Mint:     return { erosion: 0.00, grime: 0.0, luster: 1.0, shineSharpness: 1.0, noiseFreq: 0.2 };
     }
   }, [data.condition]);
 
-  const highlightColor = adjustColor(palette.base, 60); // 30-60% lighter
-  
+  // Relief Layer Component for 3D Stamped Look
+  const ReliefLayer = ({ d, strokeWidth, opacity = 1 }: { d: string, strokeWidth: number, opacity?: number }) => (
+    <g opacity={opacity}>
+        <path d={d} stroke="black" strokeWidth={strokeWidth} fill="none" transform="translate(0.5, 0.5)" opacity="0.5" />
+        <path d={d} stroke="white" strokeWidth={strokeWidth} fill="none" transform="translate(-0.5, -0.5)" opacity={0.3 * config.luster} />
+        <path d={d} stroke={palette.dark} strokeWidth={strokeWidth} fill="none" />
+    </g>
+  );
+
+  // --- 6. 3D Edge Generation ---
+  // Combine outer shape + inner hole for "EvenOdd" fill rule (solid shape with hole)
+  const solidBodyPath = `${shapePath} ${patternPath.centerPath}`;
+  const edgeColor = adjustColor(palette.dark, -40); // Much darker for shadow
+  const edgeThickness = 12; // Pixels of thickness
+  const tiltScale = 0.85;   // Scale Y to simulate 30deg tilt
+
   return (
       <svg 
         width="100%"
         height="100%"
-        viewBox={`0 0 ${diameter} ${diameter}`}
+        viewBox={`0 0 ${diameter} ${diameter}`} // Keeping viewBox standard, we scale content inside
         className="drop-shadow-2xl overflow-visible"
+        style={{ overflow: 'visible' }} // Allow 3D edge to hang out bottom
       >
         <defs>
-            {/* Main Shape Clip */}
             <clipPath id={clipId}>
                 <path d={shapePath} />
             </clipPath>
 
-            {/* Metallic Gradient */}
+            {/* HOLE MASK: Transparent center */}
+            <mask id={holeMaskId}>
+                <rect x="0" y="0" width={diameter} height={diameter} fill="white" />
+                <path d={patternPath.centerPath} fill="black" />
+            </mask>
+
+            {/* EROSION MASK */}
+            <mask id={erosionMaskId}>
+                <rect x="0" y="0" width={diameter} height={diameter} fill="white" />
+                {config.erosion > 0 && (
+                     <>
+                        <filter id={`noise-${uniquePrefix}`}>
+                            <feTurbulence type="fractalNoise" baseFrequency="0.08" numOctaves="4" seed={data.year} />
+                            <feColorMatrix type="matrix" values="0 0 0 0 0, 0 0 0 0 0, 0 0 0 0 0, 0 0 0 -9 4" />
+                        </filter>
+                        <rect 
+                            x="0" y="0" width={diameter} height={diameter} 
+                            fill="black" 
+                            filter={`url(#noise-${uniquePrefix})`} 
+                            opacity={config.erosion}
+                        />
+                     </>
+                )}
+            </mask>
+
             <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stopColor={palette.shine} />
-                <stop offset="40%" stopColor={palette.base} />
-                <stop offset="100%" stopColor={palette.dark} />
+                {config.shineSharpness > 0.5 ? (
+                    <>
+                        <stop offset="0%" stopColor={palette.dark} />
+                        <stop offset="25%" stopColor={palette.base} />
+                        <stop offset="45%" stopColor={palette.shine} />
+                        <stop offset="55%" stopColor={palette.shine} />
+                        <stop offset="75%" stopColor={palette.base} />
+                        <stop offset="100%" stopColor={palette.dark} />
+                    </>
+                ) : (
+                    <>
+                        <stop offset="0%" stopColor={palette.shine} />
+                        <stop offset="40%" stopColor={palette.base} />
+                        <stop offset="100%" stopColor={palette.dark} />
+                    </>
+                )}
             </linearGradient>
 
-            {/* Scratch Filter */}
-            <filter id={filterId} x="-20%" y="-20%" width="140%" height="140%">
-                <feTurbulence 
-                  type="fractalNoise" 
-                  baseFrequency={conditionConfig.freq} 
-                  numOctaves={conditionConfig.oct} 
-                  result="noise"
-                />
-                <feColorMatrix 
-                  type="matrix" 
-                  values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0" // Grayscale
-                  in="noise" result="grayNoise"
-                />
-                 {/* Make noise high contrast for scratches */}
-                <feComponentTransfer in="grayNoise">
-                    <feFuncA type="linear" slope="3" intercept="-1" />
+            <filter id={grainId} x="0%" y="0%" width="100%" height="100%">
+                <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="3" result="noise"/>
+                <feColorMatrix type="matrix" values="1 0 0 0 0  1 0 0 0 0  1 0 0 0 0  0 0 0 0.15 0" in="noise" result="coloredNoise"/>
+            </filter>
+
+            <filter id={grimeId}>
+                <feTurbulence type="fractalNoise" baseFrequency={config.noiseFreq} numOctaves="3" />
+                <feColorMatrix type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0" />
+                <feComponentTransfer>
+                    <feFuncA type="linear" slope="1.5" intercept="-0.2" />
                 </feComponentTransfer>
             </filter>
         </defs>
 
-        <g clipPath={`url(#${clipId})`}>
+        {/* --- 3D TRANSFORM GROUP --- */}
+        {/* We scale down slightly (0.9) to make room for the edge thickness in the viewbox */}
+        <g transform={`scale(0.9, ${0.9 * tiltScale}) translate(${diameter * 0.05}, ${diameter * 0.05})`}>
             
-            {/* 1. Base Metal Body */}
-            <path d={shapePath} fill={`url(#${gradientId})`} />
+            {/* 1. EXTRUDED EDGE (Rendered First / Behind) */}
+            {/* Creates thickness at the bottom edge and inner hole top edge */}
+            {Array.from({ length: 8 }).map((_, i) => {
+                const offset = edgeThickness - i; // Render from bottom up to avoid Z-fighting logic, though SVG painter model handles this naturally if order is right
+                // Actually, painter model: First drawn is bottom.
+                // We want the deepest part drawn first.
+                return (
+                    <path 
+                        key={i}
+                        d={solidBodyPath}
+                        fillRule="evenodd"
+                        transform={`translate(0, ${offset})`}
+                        fill={edgeColor}
+                        stroke={edgeColor}
+                        strokeWidth={1}
+                    />
+                );
+            })}
 
-            {/* 2. Procedural Pattern (Embossed Effect) */}
-            
-            {/* Layer A: Shadow (Dark Offset) */}
-            <g transform="translate(1, 1)" opacity="0.5">
-                <path d={patternPath.d} stroke={palette.dark} strokeWidth="2" fill="none" />
-                <path d={patternPath.centerPath} fill={palette.dark} stroke="none" />
+            {/* 2. MAIN FACE (Rendered On Top) */}
+            <g mask={`url(#${holeMaskId})`}>
+                <g clipPath={`url(#${clipId})`}>
+                    
+                    {/* Base Metal */}
+                    <rect x="0" y="0" width={diameter} height={diameter} fill={`url(#${gradientId})`} />
+                    <rect x="0" y="0" width={diameter} height={diameter} filter={`url(#${grainId})`} opacity="0.4" style={{ mixBlendMode: 'overlay' }} />
+
+                    {/* Pattern */}
+                    <g mask={`url(#${erosionMaskId})`}>
+                        <ReliefLayer d={patternPath.d} strokeWidth={2} />
+                    </g>
+
+                    {/* Border */}
+                    <g mask={`url(#${erosionMaskId})`}>
+                        <path d={shapePath} fill="none" stroke={`url(#${gradientId})`} strokeWidth={borderWidth} />
+                        <path d={shapePath} fill="none" stroke="black" strokeWidth={1} opacity="0.3" transform={`scale(${(diameter - borderWidth)/diameter}) translate(${borderWidth/2}, ${borderWidth/2})`} />
+                        <path d={shapePath} fill="none" stroke="white" strokeWidth={1} opacity={0.3 * config.luster} transform={`scale(${(diameter - borderWidth)/diameter}) translate(${borderWidth/2 - 1}, ${borderWidth/2 - 1})`} />
+                    </g>
+
+                    {/* Grime */}
+                    {config.grime > 0 && (
+                        <rect x="0" y="0" width={diameter} height={diameter} fill="#1a1a1a" filter={`url(#${grimeId})`} opacity={config.grime} style={{ mixBlendMode: 'multiply' }} />
+                    )}
+                </g>
             </g>
-
-            {/* Layer B: Highlight (Light Metal) */}
-            <g opacity="0.9">
-                 <path d={patternPath.d} stroke={highlightColor} strokeWidth="2" fill="none" />
-                 <path d={patternPath.centerPath} fill={highlightColor} stroke={palette.dark} strokeWidth="1" />
-            </g>
-
-            {/* 3. Scratch/Condition Overlay */}
-            {conditionConfig.opacity > 0 && (
-                <rect 
-                    x="0" y="0" width={diameter} height={diameter}
-                    fill="#333" 
-                    filter={`url(#${filterId})`}
-                    opacity={conditionConfig.opacity}
-                    style={{ mixBlendMode: 'multiply' }}
-                />
-            )}
             
-            {/* 4. Inner Rim Highlight */}
-             <path 
-                d={shapePath} 
-                fill="none" 
-                stroke={palette.shine} 
-                strokeWidth={borderWidth} 
-                strokeOpacity="0.3"
-                transform="scale(0.95) translate(5,5)" // Fake inner bevel
-            />
-
+            {/* Edge Highlight (Top face rim) */}
+            <path d={shapePath} fill="none" stroke="white" strokeWidth="0.5" strokeOpacity={0.4 * config.luster} />
         </g>
-
-        {/* 5. Outer Border Ring */}
-        <path 
-            d={shapePath} 
-            fill="none"
-            stroke={palette.dark}
-            strokeWidth={borderWidth}
-        />
-
-        {/* 6. Specular Highlight / Shine on top */}
-         <path 
-            d={shapePath} 
-            fill="none"
-            stroke="white"
-            strokeWidth="1"
-            strokeOpacity="0.15"
-         />
 
       </svg>
   );

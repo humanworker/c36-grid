@@ -84,6 +84,29 @@ export enum CoinPattern {
 
 // --- 2. DATA INTERFACES ---
 
+// --- VISUAL OVERRIDES (The Output of the Workbench) ---
+export interface CoinVisualOverrides {
+  // Shape & Form
+  shapeJitter?: number; // 0.0 to 10.0 (Irregularity)
+  
+  // Color Overrides
+  customBaseColor?: string; // Hex
+  customShineColor?: string; // Hex
+  customDarkColor?: string; // Hex
+
+  // Pattern Parametrics (Floral Engine)
+  petalCount?: number;     // 3 to 24
+  petalLength?: number;    // 0.1 to 1.0 (Ratio of radius)
+  petalWidth?: number;     // 0.1 to 1.0
+  petalSharpness?: number; // 0.1 to 2.0
+  centerRadius?: number;   // 0.1 to 0.5
+  innerLines?: number;     // 0 to 8
+  innerLineLen?: number;   // 0.1 to 1.0
+  
+  // Pattern Style
+  centerStyle?: 0 | 1 | 2; // 0:Plain, 1:Rings, 2:Dots
+}
+
 // Specific Data for Coins
 export interface CoinData {
   metal: CoinMetal;
@@ -92,6 +115,43 @@ export interface CoinData {
   border: CoinBorder;
   size: CoinSize;
   pattern: CoinPattern;
+  visualOverrides?: CoinVisualOverrides; // Stored DNA from procedural generation
+}
+
+// --- DESIGN PROFILE (The Input/Constraints) ---
+
+export interface Range {
+    min: number;
+    max: number;
+}
+
+export interface DesignProfile {
+    // Base DNA Constraints
+    allowedMetals: CoinMetal[];
+    yearRange: Range;
+    allowedPatterns: CoinPattern[];
+    
+    // Visual Parametric Ranges
+    shapeJitter: Range;
+    petalCount: Range;
+    petalLength: Range;
+    petalWidth: Range;
+    petalSharpness: Range;
+    centerRadius: Range;
+    
+    // Colors (Fixed overrides for the profile, or undefined for procedural)
+    customBaseColor?: string;
+    customShineColor?: string;
+    customDarkColor?: string;
+}
+
+// Project Structure for LocalStorage
+export interface DesignProject {
+  id: string;
+  name: string;
+  updatedAt: number;
+  type: ArtifactType;
+  profile: DesignProfile; // Replaces baseData/overrides
 }
 
 // Generic Wrapper for All Collectables
