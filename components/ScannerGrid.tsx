@@ -36,7 +36,11 @@ export const ScannerGrid: React.FC<ScannerGridProps> = ({ isHostile, playerPos, 
     if (typeof L === 'undefined') return;
 
     // Create Map
+    // We initialize with a default view to ensure the map instance is fully ready
+    // even before the GPS signal locks on.
     const map = L.map(mapContainerRef.current, {
+        center: [0, 0],
+        zoom: 2,
         attributionControl: false,
         zoomControl: false,
         zoomAnimation: false,
@@ -51,31 +55,44 @@ export const ScannerGrid: React.FC<ScannerGridProps> = ({ isHostile, playerPos, 
         tap: false
     });
     
-    // CartoDB Dark Matter (API-Key-Free alternative to Stadia for easy setup)
-    // To use Stadia, swap the URL to: https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    // --- TILE LAYER CONFIGURATION ---
+    
+    // STADIA MAPS: Stamen Toner Dark
+    // Using the 'styles' endpoint to rasterize the vector style ID provided.
+    // Domain authentication is enabled, so no API Key is passed in the URL.
+    L.tileLayer('https://tiles.stadiamaps.com/styles/stamen_toner_dark/{z}/{x}/{y}{r}.png', {
         maxZoom: 20,
-        subdomains: 'abcd'
+        attribution: '&copy; <a href="https://stadiamaps.com/">Stadia Maps</a>',
     }).addTo(map);
 
     mapRef.current = map;
+
+    // CRITICAL FIX: Invalidate size after mount to ensure map renders in Flex container
+    // Increased delay to 500ms to be robust against slower layout recalculations
+    setTimeout(() => {
+        map.invalidateSize();
+        if (gps) {
+             map.setView([gps.lat, gps.lon], 18);
+        }
+    }, 500);
 
     return () => {
         map.remove();
         mapRef.current = null;
     };
-  }, []);
+  }, []); // Empty dependency array = runs once on mount
 
   // Sync Map with GPS
   useEffect(() => {
       if (mapRef.current && gps) {
-          mapRef.current.setView([gps.lat, gps.lon], 18); // Zoom 18 matches ~60m scale reasonably well
+          // Robustness check: Ensure map size is calculated
+          mapRef.current.invalidateSize(); 
+          mapRef.current.setView([gps.lat, gps.lon], 18, { animate: true }); 
       }
   }, [gps]);
 
 
   // Grid background scrolling logic
-  // REMOVED Math.abs() to ensure correct scrolling direction for negative coordinates
   const offsetX = playerPos.x % CELL_SIZE_METERS;
   const offsetY = playerPos.y % CELL_SIZE_METERS;
   const shiftX = offsetX * PIXELS_PER_METER;
@@ -192,8 +209,8 @@ export const ScannerGrid: React.FC<ScannerGridProps> = ({ isHostile, playerPos, 
       {/* 1. MAP LAYER (Background) */}
       <div 
         ref={mapContainerRef} 
-        className="absolute inset-0 z-0 opacity-40 grayscale mix-blend-screen"
-        style={{ pointerEvents: 'none' }} 
+        className="absolute inset-0 z-0 opacity-50"
+        style={{ pointerEvents: 'none', background: '#111' }} 
       />
 
       {/* 2. TORCH VIGNETTE (Overlay on Map) */}
