@@ -9,11 +9,11 @@ interface ScannerGridProps {
   isHostile: boolean;
   playerPos: { x: number, y: number };
   visited: Record<string, CellType>;
-  isDetectorActive: boolean;
+  detectorRange: number; // In Meters
   gps: { lat: number, lon: number } | null;
 }
 
-export const ScannerGrid: React.FC<ScannerGridProps> = ({ isHostile, playerPos, visited, isDetectorActive, gps }) => {
+export const ScannerGrid: React.FC<ScannerGridProps> = ({ isHostile, playerPos, visited, detectorRange, gps }) => {
   // Grid lines color
   const gridColor = isHostile ? "stroke-red-600" : "stroke-zinc-700";
   const playerColor = isHostile ? "fill-red-500" : "fill-white";
@@ -162,18 +162,18 @@ export const ScannerGrid: React.FC<ScannerGridProps> = ({ isHostile, playerPos, 
       return null;
   };
 
-  const renderCells = () => {
-      const visibleRange = 2; // Show cells +/- 2 from center (5x5 grid)
+  // Renders cells that have been visited or special persistent markers (Shop/Hostile)
+  const renderVisitedCells = () => {
+      const visibleRange = 2; // Show cells +/- 2 from center
       const elements = [];
 
       for (let cx = currentCellX - visibleRange; cx <= currentCellX + visibleRange; cx++) {
           for (let cy = currentCellY - visibleRange; cy <= currentCellY + visibleRange; cy++) {
               const key = `${cx},${cy}`;
               const visitedType = visited[key];
-              const { x, y } = getScreenPos(cx, cy);
-
-              // 1. Priority: Visited/Excavated Markers
+              
               if (visitedType) {
+                   const { x, y } = getScreenPos(cx, cy);
                    const content = getIconContent(visitedType, visitedType === 'HOSTILE' ? '#dc2626' : '#52525b');
                    if (content) {
                        elements.push(
@@ -182,26 +182,43 @@ export const ScannerGrid: React.FC<ScannerGridProps> = ({ isHostile, playerPos, 
                            </g>
                        );
                    }
-              } 
-              // 2. Secondary: Metal Detector Hints
-              else if (isDetectorActive) {
-                   // Check if within 1 cell radius (3x3 area)
-                   if (Math.abs(cx - currentCellX) <= 1 && Math.abs(cy - currentCellY) <= 1) {
-                        const type = getCellType(cx, cy);
-                        const content = getIconContent(type, '#4ade80', true); // Green, Pulse
-                        if (content) {
-                             elements.push(
-                                <g key={`det-${key}`} transform={`translate(${x}, ${y})`}>
-                                    {content}
-                                </g>
-                             );
-                        }
-                   }
               }
           }
       }
       return elements;
   };
+
+  // Renders unvisited items that are hidden in the dark but revealed by the detector mask
+  const renderHiddenItems = () => {
+      const elements = [];
+      const visibleRange = 1; // Range to perform lookups (optimization)
+
+      for (let cx = currentCellX - visibleRange; cx <= currentCellX + visibleRange; cx++) {
+          for (let cy = currentCellY - visibleRange; cy <= currentCellY + visibleRange; cy++) {
+              const key = `${cx},${cy}`;
+              
+              // Skip if already visited/cleared
+              if (visited[key]) continue;
+
+              const type = getCellType(cx, cy);
+              
+              // Only render interesting things (Coins/Food)
+              if (type === 'COIN' || type === 'FOOD') {
+                   const { x, y } = getScreenPos(cx, cy);
+                   const content = getIconContent(type, '#4ade80', false); // Green tint for detector
+                   
+                   elements.push(
+                        <g key={`hid-${key}`} transform={`translate(${x}, ${y})`}>
+                            {content}
+                        </g>
+                   );
+              }
+          }
+      }
+      return elements;
+  };
+
+  const detectorRadiusPx = detectorRange * PIXELS_PER_METER;
 
   return (
     <div className="w-full h-full relative flex items-center justify-center overflow-hidden bg-black">
@@ -214,7 +231,6 @@ export const ScannerGrid: React.FC<ScannerGridProps> = ({ isHostile, playerPos, 
       />
 
       {/* 2. TORCH VIGNETTE (Overlay on Map) */}
-      {/* Creates the flashlight effect where only the center is visible */}
       <div 
         className="absolute inset-0 z-0 pointer-events-none"
         style={{ background: 'radial-gradient(circle at center, transparent 15%, #000 85%)' }}
@@ -227,6 +243,16 @@ export const ScannerGrid: React.FC<ScannerGridProps> = ({ isHostile, playerPos, 
                 <pattern id="smallGrid" width="10" height="10" patternUnits="userSpaceOnUse">
                     <path d="M 10 0 L 0 0 0 10" fill="none" stroke="currentColor" strokeWidth="0.5" className="text-zinc-900"/>
                 </pattern>
+                
+                {/* DETECTOR MASK: White center (visible), fading to black (hidden) */}
+                <mask id="detectorMask">
+                    <radialGradient id="detectorGradient">
+                        <stop offset="50%" stopColor="white" stopOpacity="1"/>
+                        <stop offset="100%" stopColor="white" stopOpacity="0"/>
+                    </radialGradient>
+                    {/* The circle size changes based on detector range upgrades */}
+                    <circle cx="150" cy="150" r={detectorRadiusPx} fill="url(#detectorGradient)" />
+                </mask>
             </defs>
 
             {/* Moving Grid Layer */}
@@ -234,14 +260,12 @@ export const ScannerGrid: React.FC<ScannerGridProps> = ({ isHostile, playerPos, 
                 {/* Grid Lines */}
                 {[...Array(5)].map((_, i) => (
                     <React.Fragment key={i}>
-                        {/* Vertical */}
                         <line 
                             x1={CENTER + (i-2)*CELL_SIZE_PX} y1="-150" 
                             x2={CENTER + (i-2)*CELL_SIZE_PX} y2="450" 
                             className={`${gridColor} transition-colors duration-300`} 
                             strokeWidth="1" strokeDasharray="4 4" 
                         />
-                        {/* Horizontal */}
                         <line 
                             x1="-150" y1={CENTER + (i-2)*CELL_SIZE_PX} 
                             x2="450" y2={CENTER + (i-2)*CELL_SIZE_PX} 
@@ -252,7 +276,7 @@ export const ScannerGrid: React.FC<ScannerGridProps> = ({ isHostile, playerPos, 
                 ))}
             </g>
 
-            {/* Static Overlay Layer: Current Cell Highlight */}
+            {/* Current Cell Highlight (Static Overlay) */}
             <rect 
                 x={highlightPos.x - CELL_SIZE_PX / 2} 
                 y={highlightPos.y - CELL_SIZE_PX / 2} 
@@ -264,8 +288,16 @@ export const ScannerGrid: React.FC<ScannerGridProps> = ({ isHostile, playerPos, 
                 className={`${isHostile ? 'text-red-500 animate-pulse' : 'text-zinc-500'}`} 
             />
 
-            {/* Icons Layer */}
-            {renderCells()}
+            {/* Visited Cells (Always Visible) */}
+            {renderVisitedCells()}
+
+            {/* Hidden Cells (Revealed by Torch Mask) */}
+            <g mask="url(#detectorMask)">
+                {renderHiddenItems()}
+            </g>
+
+            {/* Detector Ring Hint (Optional: Shows the effective range boundary faintly) */}
+            <circle cx="150" cy="150" r={detectorRadiusPx} fill="none" stroke="#4ade80" strokeWidth="1" strokeDasharray="2 4" opacity="0.2" />
 
             {/* Player Position Marker - Always Center */}
             <circle cx="150" cy="150" r="4" className={`${playerColor} transition-colors duration-300 drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]`} />

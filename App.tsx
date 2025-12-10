@@ -69,8 +69,10 @@ export default function App() {
   const isVisited = !!visited[currentKey];
   
   // Tool Status
-  const isDetectorActive = detectorExpiry !== null && now < detectorExpiry;
+  // Metal Detector is always "Active" (base range), expiry determines BOOSTER status
+  const isDetectorBoosted = detectorExpiry !== null && now < detectorExpiry;
   const detectorTimeLeft = detectorExpiry ? Math.max(0, Math.ceil((detectorExpiry - now) / 1000)) : 0;
+  const currentDetectorRange = isDetectorBoosted ? 80 : 40; // Meters (Updated: 40m Base, 80m Boost)
   
   const isSonarActive = sonarExpiry !== null && now < sonarExpiry;
   const sonarTimeLeft = sonarExpiry ? Math.max(0, Math.ceil((sonarExpiry - now) / 1000)) : 0;
@@ -456,11 +458,11 @@ export default function App() {
       addLog(`Assets Liquidated. +$${value.toLocaleString()}.`);
   };
 
-  const buyDetector = () => {
+  const buyRangeBoost = () => {
       if (balance >= 5000) {
           setBalance(prev => prev - 5000);
           setDetectorExpiry(Date.now() + 10 * 60 * 1000); 
-          addLog(`Metal Detector Equipped. +${XP_VALUES.BUY_DETECTOR} XP.`);
+          addLog(`Detector Range Boosted. +${XP_VALUES.BUY_DETECTOR} XP.`);
           setView('SCANNER');
           setXp(p => p + XP_VALUES.BUY_DETECTOR);
       }
@@ -551,7 +553,7 @@ export default function App() {
                 </div>
 
                  {/* Detector Timer */}
-                 {isDetectorActive && (
+                 {isDetectorBoosted && (
                     <div className="flex items-center gap-2 text-[10px] text-green-400 bg-green-900/20 px-2 py-1 rounded border border-green-900/50 animate-in fade-in slide-in-from-top-1">
                         <ScanLine size={10} />
                         <span>{Math.floor(detectorTimeLeft/60)}:{(detectorTimeLeft%60).toString().padStart(2,'0')}</span>
@@ -580,7 +582,7 @@ export default function App() {
                     isHostile={isHostile} 
                     playerPos={pos}
                     visited={visited}
-                    isDetectorActive={isDetectorActive}
+                    detectorRange={currentDetectorRange}
                     gps={gps}
                 />
             </div>
@@ -627,8 +629,8 @@ export default function App() {
                 manualMode={manualMode}
                 onToggleManualMovement={() => setManualMode(!manualMode)}
                 
-                isDetectorActive={isDetectorActive}
-                onToggleDetector={() => setDetectorExpiry(isDetectorActive ? null : Date.now() + 10 * 60 * 1000)}
+                isDetectorActive={isDetectorBoosted}
+                onToggleDetector={() => setDetectorExpiry(isDetectorBoosted ? null : Date.now() + 10 * 60 * 1000)}
                 
                 isSonarActive={isSonarActive}
                 onToggleSonar={() => setSonarExpiry(isSonarActive ? null : Date.now() + 5 * 60 * 1000)}
@@ -645,21 +647,21 @@ export default function App() {
                     <ShoppingBag size={48} className="text-white mb-6" />
                     
                     <div className="w-full space-y-4 mb-8">
-                        {/* Metal Detector */}
+                        {/* Metal Detector Upgrade */}
                         <div className="bg-zinc-900 border border-zinc-700 p-4 rounded-lg flex items-center justify-between">
                             <div className="flex items-center gap-3">
                                     <div className="bg-green-900/30 p-2 rounded text-green-400">
                                     <ScanLine size={24} />
                                     </div>
                                     <div className="text-left">
-                                        <div className="text-white text-sm font-bold">Metal Detector</div>
-                                        <div className="text-zinc-500 text-[10px]">10m Battery Life</div>
+                                        <div className="text-white text-sm font-bold">Range Booster</div>
+                                        <div className="text-zinc-500 text-[10px]">Boost to 80m (10m)</div>
                                     </div>
                             </div>
                             <div className="flex flex-col items-end gap-2">
                                 <span className="text-green-400 font-mono text-sm">$5,000</span>
                                 <button 
-                                    onClick={buyDetector}
+                                    onClick={buyRangeBoost}
                                     disabled={balance < 5000}
                                     className={`bg-white text-black text-[10px] font-bold px-3 py-1 rounded uppercase tracking-wider ${balance < 5000 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-zinc-200'}`}
                                 >
