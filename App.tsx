@@ -50,8 +50,6 @@ export default function App() {
   const visitedRef = useRef(visited);
   const posRef = useRef(pos); // Ref for Sonar to access latest pos without restarting loop
   const lastGpsUpdate = useRef<{ x: number, y: number } | null>(null);
-  const lastGpsTime = useRef<number>(Date.now());
-  const watchIdRef = useRef<number | null>(null);
   const keys = useRef<{ [key: string]: boolean }>({});
   const lastUpdate = useRef<number>(0);
   const flashTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null); // For Flash animation reset
@@ -136,56 +134,29 @@ export default function App() {
       if (view === 'START') return;
       if (manualMode) return; // Don't use GPS in manual mode
 
-      const startWatcher = () => {
-          if (watchIdRef.current !== null) {
-              navigator.geolocation.clearWatch(watchIdRef.current);
-          }
+      if ('geolocation' in navigator) {
+          const watchId = navigator.geolocation.watchPosition(
+              (position) => {
+                  const { latitude, longitude } = position.coords;
+                  setGps({ lat: latitude, lon: longitude });
+                  
+                  // Convert to Game Grid Meters
+                  const newMeters = latLonToMeters(latitude, longitude);
 
-          if ('geolocation' in navigator) {
-              watchIdRef.current = navigator.geolocation.watchPosition(
-                  (position) => {
-                      lastGpsTime.current = Date.now();
-                      const { latitude, longitude } = position.coords;
-                      setGps({ lat: latitude, lon: longitude });
-                      
-                      // Convert to Game Grid Meters
-                      const newMeters = latLonToMeters(latitude, longitude);
-
-                      // Drift Protection: Only update if moved > 2 meters
-                      if (!lastGpsUpdate.current || getDistance(lastGpsUpdate.current, newMeters) > 2) {
-                          setPos(newMeters);
-                          lastGpsUpdate.current = newMeters;
-                      }
-                  },
-                  (err) => {
-                      console.error("GPS Error", err);
-                      // Errors handled by watchdog restart
-                  },
-                  { 
-                      enableHighAccuracy: true, 
-                      maximumAge: 0,
-                      timeout: 10000 
+                  // Drift Protection: Only update if moved > 2 meters
+                  if (!lastGpsUpdate.current || getDistance(lastGpsUpdate.current, newMeters) > 2) {
+                      setPos(newMeters);
+                      lastGpsUpdate.current = newMeters;
                   }
-              );
-          }
-      };
-
-      startWatcher();
-      lastGpsTime.current = Date.now();
-
-      // Watchdog: Restart GPS if stalled for > 15s
-      const watchdog = setInterval(() => {
-          if (Date.now() - lastGpsTime.current > 15000) {
-              addLog("GPS Signal Stalled. Restarting...");
-              startWatcher();
-              lastGpsTime.current = Date.now();
-          }
-      }, 5000);
-
-      return () => {
-          if (watchIdRef.current !== null) navigator.geolocation.clearWatch(watchIdRef.current);
-          clearInterval(watchdog);
-      };
+              },
+              (err) => {
+                  console.error("GPS Error", err);
+                  addLog("ERR: GPS Signal Lost.");
+              },
+              { enableHighAccuracy: true, maximumAge: 0 }
+          );
+          return () => navigator.geolocation.clearWatch(watchId);
+      }
   }, [view, manualMode, addLog]);
 
   // Manual Movement Loop (Dev Mode)
@@ -274,13 +245,6 @@ export default function App() {
          if (flashTimeoutRef.current) clearTimeout(flashTimeoutRef.current);
          // Hold bright for 200ms, then let CSS transition take over to fade out
          flashTimeoutRef.current = setTimeout(() => setGreenFlash(false), 200); 
-    }
-
-    // Auto-mark EMPTY cells
-    if (type === 'EMPTY' && !wasVisited) {
-        addLog(`Area Empty. +${XP_VALUES.SCAN_EMPTY} XP.`);
-        setVisited(prev => ({...prev, [key]: 'EMPTY'}));
-        setXp(p => p + XP_VALUES.SCAN_EMPTY);
     }
   }, [cell, addLog, view]); 
 
@@ -538,7 +502,6 @@ export default function App() {
     if (isVisited) return; 
 
     if (cellType === 'EMPTY') {
-        // Fallback in case auto-logic hasn't fired yet
         addLog(`Area Empty. +${XP_VALUES.SCAN_EMPTY} XP.`);
         setVisited(p => ({...p, [currentKey]: 'EMPTY'}));
         setXp(p => p + XP_VALUES.SCAN_EMPTY);
@@ -717,7 +680,7 @@ export default function App() {
                         : 'bg-white text-black disabled:bg-zinc-800 disabled:text-zinc-500 hover:bg-zinc-200' 
                     }`}
                 >
-                    {hp <= 0 ? 'Exhausted' : (isShop && isVisited) ? 'Enter Shop' : isVisited ? 'Area Cleared' : isAnalyzing ? 'Analyzing...' : 'Excavate'}
+                    {hp <= 0 ? 'Exhausted' : isAnalyzing ? 'Analyzing...' : isShop && isVisited ? 'Enter Shop' : isVisited ? 'Area Cleared' : 'Excavate'}
                 </button>
             </div>
       </div>
@@ -808,6 +771,40 @@ export default function App() {
                     </button>
             </div>
         )}
+
+      {view === 'DISCOVERY' && lastDiscoveredArtifact && (
+            <div className="absolute inset-0 z-50 bg-black/95 flex flex-col items-center justify-center p-6 animate-in fade-in zoom-in duration-300">
+                <div className="text-white text-sm tracking-widest uppercase mb-8 border-b border-white pb-2">
+                    {lastDiscoveredArtifact.type} FOUND
+                </div>
+                
+                <div className="w-64 h-64 flex items-center justify-center mb-8">
+                    <ArtifactRenderer artifact={lastDiscoveredArtifact} />
+                </div>
+                
+                {lastDiscoveredArtifact.type === ArtifactType.COIN && (
+                     <div className="text-center space-y-2 mb-8">
+                        <h2 className="text-2xl font-bold text-white">{(lastDiscoveredArtifact.data as CoinData).metal} Coin</h2>
+                        <p className="text-zinc-500 text-xs uppercase flex items-center justify-center gap-2">
+                            {(lastDiscoveredArtifact.data as CoinData).condition} • {formatYear((lastDiscoveredArtifact.data as CoinData).year)} 
+                            <span className="px-1.5 py-0.5 bg-black/80 border border-zinc-800 rounded text-[10px] text-yellow-500 font-mono">
+                                {lastDiscoveredArtifact.rarityScore.toFixed(1)}
+                            </span>
+                        </p>
+                        <div className="inline-block px-3 py-1 bg-zinc-900 border border-zinc-800 rounded text-xs text-green-400 mt-2">
+                            VALUE: ${lastDiscoveredArtifact.monetaryValue.toLocaleString()}
+                        </div>
+                    </div>
+                )}
+
+                <button 
+                    onClick={() => setView('SCANNER')}
+                    className="w-full max-w-xs bg-white text-black font-bold py-3 rounded uppercase text-xs tracking-widest hover:bg-zinc-200"
+                >
+                    Collect & Close
+                </button>
+            </div>
+      )}
 
       {/* Scan Lines Overlay */}
       <div className="absolute inset-0 pointer-events-none opacity-5 z-40" 
