@@ -33,6 +33,7 @@ export default function App() {
   const [logs, setLogs] = useState<string[]>([]);
   const [lastDiscoveredArtifact, setLastDiscoveredArtifact] = useState<Artifact | null>(null);
   const [now, setNow] = useState(Date.now()); 
+  const [greenFlash, setGreenFlash] = useState(false);
   
   // Developer Mode State
   const [devInstantScan, setDevInstantScan] = useState(false);
@@ -51,6 +52,7 @@ export default function App() {
   const lastGpsUpdate = useRef<{ x: number, y: number } | null>(null);
   const keys = useRef<{ [key: string]: boolean }>({});
   const lastUpdate = useRef<number>(0);
+  const flashTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null); // For Flash animation reset
   
   // Audio Context Refs
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -212,17 +214,34 @@ export default function App() {
     const type = getCellType(cell.x, cell.y);
     setCellType(type);
     const key = `${cell.x},${cell.y}`;
+    const wasVisited = visitedRef.current[key];
     
     if (type === 'HOSTILE') {
-        if (!visitedRef.current[key]) {
+        if (!wasVisited) {
             addLog("ALERT: HOSTILE ENTITY DETECTED.");
         }
         setVisited(prev => ({ ...prev, [key]: 'HOSTILE' }));
     }
     
-    if (type === 'SHOP' && !visitedRef.current[key]) {
+    if (type === 'SHOP' && !wasVisited) {
         setView('SHOP');
         setVisited(prev => ({ ...prev, [key]: 'SHOP' }));
+    }
+
+    // Auto-consume food logic
+    if (type === 'FOOD' && !wasVisited) {
+         const I5 = Math.abs(cell.x) % 10;
+         const heal = (I5 * 2.5) + 10;
+         setHp(prev => Math.min(100, prev + heal));
+         addLog(`Food Consumed. +${heal.toFixed(0)} HP / +${XP_VALUES.SCAN_FOOD} XP.`);
+         setVisited(prev => ({...prev, [key]: 'FOOD'}));
+         setXp(p => p + XP_VALUES.SCAN_FOOD);
+         
+         // Trigger Flash
+         setGreenFlash(true);
+         if (flashTimeoutRef.current) clearTimeout(flashTimeoutRef.current);
+         // Hold bright for 200ms, then let CSS transition take over to fade out
+         flashTimeoutRef.current = setTimeout(() => setGreenFlash(false), 200); 
     }
   }, [cell, addLog]); 
 
@@ -483,12 +502,6 @@ export default function App() {
         addLog(`Area Empty. +${XP_VALUES.SCAN_EMPTY} XP.`);
         setVisited(p => ({...p, [currentKey]: 'EMPTY'}));
         setXp(p => p + XP_VALUES.SCAN_EMPTY);
-    } else if (cellType === 'FOOD') {
-        const heal = (I5 * 2.5) + 10;
-        setHp(prev => Math.min(100, prev + heal));
-        addLog(`Rations Found. +${heal.toFixed(0)} HP / +${XP_VALUES.SCAN_FOOD} XP.`);
-        setVisited(p => ({...p, [currentKey]: 'FOOD'}));
-        setXp(p => p + XP_VALUES.SCAN_FOOD);
     } else if (cellType === 'COIN') {
         const newArtifact = generateArtifact(cell.x, cell.y);
         setLastDiscoveredArtifact(newArtifact);
@@ -627,6 +640,9 @@ export default function App() {
             {/* Background Hostile Effect */}
             {isHostile && !isImmune && <div className="absolute inset-0 bg-red-900/20 animate-pulse pointer-events-none z-10"></div>}
             {isHostile && isImmune && <div className="absolute inset-0 bg-blue-900/10 pointer-events-none z-10"></div>}
+            
+            {/* Food Flash Effect - Always mounted for transition stability */}
+            <div className={`absolute inset-0 bg-green-500/20 pointer-events-none z-10 transition-opacity ${greenFlash ? 'duration-0 opacity-100' : 'duration-[1500ms] opacity-0'}`}></div>
 
             {/* The Grid */}
             <div className="flex-1 flex items-center justify-center relative">

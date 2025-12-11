@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { CellType, getCellType } from '../utils/gameLogic';
-import { Skull, ShoppingBag } from 'lucide-react';
+import { Skull, ShoppingBag, Utensils } from 'lucide-react';
 
 // Declare Leaflet global
 declare const L: any;
@@ -136,9 +136,11 @@ export const ScannerGrid: React.FC<ScannerGridProps> = ({ isHostile, playerPos, 
           );
       } else if (type === 'FOOD') {
           return (
-            <g className={cls}>
-                <path d="M-10 0 H10 M0 -10 V10" stroke={color} strokeWidth="4" />
-            </g>
+            <foreignObject x="-12" y="-12" width="24" height="24" className={cls}>
+                 <div className="flex items-center justify-center w-full h-full">
+                    <Utensils size={18} color={color} />
+                 </div>
+            </foreignObject>
           );
       } else if (type === 'COIN') {
           return <circle r="15" stroke={color} strokeWidth="3" fill="none" className={cls} />;
@@ -210,6 +212,7 @@ export const ScannerGrid: React.FC<ScannerGridProps> = ({ isHostile, playerPos, 
                    let color = '#4ade80'; // Green default
                    if (type === 'HOSTILE') color = '#ef4444'; // Red
                    if (type === 'SHOP') color = '#60a5fa'; // Blue
+                   // Food uses Green default
 
                    const content = getIconContent(type, color, false);
                    
