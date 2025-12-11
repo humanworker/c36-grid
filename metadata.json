@@ -1,5 +1,7 @@
 {
-  "name": "Moving on to adding shops",
+  "name": "current c36",
   "description": "A procedural coin design workbench for the C-36 Grid location-based game.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [
+    "geolocation"
+  ]
 }
