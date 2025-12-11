@@ -10,6 +10,7 @@ export interface GameState {
     visited: Record<string, CellType>;
     detectorExpiry: number | null;
     sonarExpiry: number | null;
+    immunityExpiry: number | null; // New: Immunity timestamp
     manualMode: boolean; // Persist dev setting
     xp: number;
 }
@@ -37,6 +38,7 @@ export const loadGameState = (): GameState | null => {
             visited: state.visited || {},
             detectorExpiry: state.detectorExpiry || null,
             sonarExpiry: state.sonarExpiry || null,
+            immunityExpiry: state.immunityExpiry || null,
             manualMode: !!state.manualMode,
             xp: typeof state.xp === 'number' ? state.xp : 0
         };

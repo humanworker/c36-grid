@@ -6,7 +6,7 @@ import { EventLog } from './components/EventLog';
 import { InventoryView } from './components/InventoryView';
 import { ArtifactRenderer } from './components/ArtifactRenderer'; 
 import { DesignWorkbench } from './components/DesignWorkbench'; 
-import { ShoppingBag, ScanLine, MapPin, Radar } from 'lucide-react';
+import { ShoppingBag, ScanLine, MapPin, Radar, ShieldAlert } from 'lucide-react';
 
 // New Imports for GPS and Storage
 import { latLonToMeters, getDistance } from './utils/geo';
@@ -26,6 +26,7 @@ export default function App() {
   const [visited, setVisited] = useState<VisitedMap>({});
   const [detectorExpiry, setDetectorExpiry] = useState<number | null>(null);
   const [sonarExpiry, setSonarExpiry] = useState<number | null>(null);
+  const [immunityExpiry, setImmunityExpiry] = useState<number | null>(null); // Hostile immunity
   const [xp, setXp] = useState(0);
   
   // Ephemeral State
@@ -51,8 +52,10 @@ export default function App() {
   const keys = useRef<{ [key: string]: boolean }>({});
   const lastUpdate = useRef<number>(0);
   
-  // Audio Context Ref for Sonar
+  // Audio Context Refs
   const audioCtxRef = useRef<AudioContext | null>(null);
+  const droneOscRef = useRef<OscillatorNode | null>(null);
+  const droneGainRef = useRef<GainNode | null>(null);
 
   // Constants
   const CELL_SIZE = 60; // Meters
@@ -67,15 +70,15 @@ export default function App() {
   const I5 = Math.abs(cell.x) % 10;
   const currentKey = `${cell.x},${cell.y}`;
   const isVisited = !!visited[currentKey];
+  const isImmune = immunityExpiry !== null && now < immunityExpiry;
   
   // Tool Status
-  // Metal Detector is always "Active" (base range), expiry determines BOOSTER status
-  const isDetectorBoosted = detectorExpiry !== null && now < detectorExpiry;
-  const detectorTimeLeft = detectorExpiry ? Math.max(0, Math.ceil((detectorExpiry - now) / 1000)) : 0;
-  const currentDetectorRange = isDetectorBoosted ? 80 : 40; // Meters (Updated: 40m Base, 80m Boost)
+  // Metal Detector is now always active with increased range (80m)
+  const isDetectorBoosted = true; 
+  const currentDetectorRange = 80; // Hardcoded to 80m
   
-  const isSonarActive = sonarExpiry !== null && now < sonarExpiry;
-  const sonarTimeLeft = sonarExpiry ? Math.max(0, Math.ceil((sonarExpiry - now) / 1000)) : 0;
+  // Sonar is now always active
+  const isSonarActive = true;
   
   // Leveling Maths
   const currentLevel = Math.floor(xp / XP_VALUES.LEVEL_THRESHOLD) + 1;
@@ -96,6 +99,7 @@ export default function App() {
           setVisited(saved.visited);
           setDetectorExpiry(saved.detectorExpiry);
           setSonarExpiry(saved.sonarExpiry);
+          setImmunityExpiry(saved.immunityExpiry);
           setManualMode(saved.manualMode);
           setXp(saved.xp);
           addLog("System: Save State Loaded.");
@@ -114,10 +118,11 @@ export default function App() {
           visited,
           detectorExpiry,
           sonarExpiry,
+          immunityExpiry,
           manualMode,
           xp
       });
-  }, [hp, balance, inventory, visited, detectorExpiry, sonarExpiry, manualMode, view, xp]);
+  }, [hp, balance, inventory, visited, detectorExpiry, sonarExpiry, immunityExpiry, manualMode, view, xp]);
 
 
   // --- 3. MOVEMENT ENGINE (GPS + MANUAL) ---
@@ -202,14 +207,16 @@ export default function App() {
     }
   }, [pos.x, pos.y, cell.x, cell.y]);
 
-  // Cell Entry Logic
+  // Cell Entry Logic (Update Cell Type & Visited)
   useEffect(() => {
     const type = getCellType(cell.x, cell.y);
     setCellType(type);
     const key = `${cell.x},${cell.y}`;
     
     if (type === 'HOSTILE') {
-        if (!visitedRef.current[key]) addLog("Warning you are in a Hostile area. Get out!");
+        if (!visitedRef.current[key]) {
+            addLog("ALERT: HOSTILE ENTITY DETECTED.");
+        }
         setVisited(prev => ({ ...prev, [key]: 'HOSTILE' }));
     }
     
@@ -231,17 +238,17 @@ export default function App() {
     }
   }, [cell, devInstantScan]);
 
-  // Hostile Damage - STRICTLY PAUSED WHEN NOT IN SCANNER
+  // Hostile Damage - STRICTLY PAUSED WHEN NOT IN SCANNER OR IMMUNE
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
-    if (isHostile && view === 'SCANNER') {
+    if (isHostile && view === 'SCANNER' && !isImmune) {
         // Slowed down to 2000ms (2 seconds)
         interval = setInterval(() => {
             setHp(prev => Math.max(0, prev - ((L5 % 10) + 1)));
         }, 2000);
     }
     return () => clearInterval(interval);
-  }, [isHostile, L5, view]);
+  }, [isHostile, L5, view, isImmune]);
 
   // Passive HP Drain - STRICTLY PAUSED WHEN NOT IN SCANNER
   useEffect(() => {
@@ -261,8 +268,7 @@ export default function App() {
              // Only trigger exhaustion if we aren't already there and not on start screen
              if (h <= 0 && view !== 'EXHAUSTION' && view !== 'START') {
                 setView('EXHAUSTION');
-                setXp(prev => Math.max(0, prev - XP_VALUES.DEATH_PENALTY));
-                addLog(`Vital Signs Critical. -${XP_VALUES.DEATH_PENALTY} XP.`);
+                addLog(`Vital Signs Critical. Emergency Stasis.`);
              }
              return h;
         });
@@ -270,10 +276,9 @@ export default function App() {
     return () => clearInterval(timer);
   }, [view, addLog]);
 
-  // --- SONAR AUDIO LOGIC ---
+  // --- AUDIO LOGIC ---
   const playBeep = () => {
     if (!audioCtxRef.current) {
-        // Fix TS error: webkitAudioContext not on Window
         audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
     }
     const ctx = audioCtxRef.current;
@@ -295,6 +300,64 @@ export default function App() {
     osc.start();
     osc.stop(ctx.currentTime + 0.1);
   };
+
+  // Continuous Drone for Hostile Cells
+  useEffect(() => {
+    // We play the drone if in a hostile cell in scanner mode
+    // We do this regardless of immunity to warn the player they are in a danger zone
+    const shouldPlay = isHostile && view === 'SCANNER';
+    
+    if (shouldPlay) {
+        if (!audioCtxRef.current) {
+             audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+        }
+        const ctx = audioCtxRef.current;
+        if (ctx.state === 'suspended') ctx.resume();
+
+        // Start if not already playing
+        if (!droneOscRef.current) {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            
+            // Ominous Drone: Low frequency Sawtooth
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(55, ctx.currentTime); // Low A
+            
+            // Soft fade in
+            gain.gain.setValueAtTime(0, ctx.currentTime);
+            gain.gain.linearRampToValueAtTime(0.2, ctx.currentTime + 1);
+            
+            osc.start();
+            
+            droneOscRef.current = osc;
+            droneGainRef.current = gain;
+        }
+    } else {
+        // Stop if playing
+        if (droneOscRef.current && droneGainRef.current && audioCtxRef.current) {
+            const osc = droneOscRef.current;
+            const gain = droneGainRef.current;
+            const ctx = audioCtxRef.current;
+            
+            // Fade out
+            try {
+                gain.gain.cancelScheduledValues(ctx.currentTime);
+                gain.gain.setTargetAtTime(0, ctx.currentTime, 0.2);
+                osc.stop(ctx.currentTime + 0.5);
+            } catch (e) {
+                // Ignore audio context errors on cleanup
+            }
+            
+            droneOscRef.current = null;
+            droneGainRef.current = null;
+        }
+    }
+
+    // Unmount cleanup handled by ref check
+  }, [isHostile, view]);
 
   // Sonar Loop
   useEffect(() => {
@@ -344,17 +407,21 @@ export default function App() {
               }
           }
 
-          // Max Audible Range: 200 Meters
-          const MAX_RANGE = 200; 
+          // Max Audible Range: 100 Meters
+          const MAX_RANGE = 100; 
           
           if (minDistanceMeters <= MAX_RANGE) {
               playBeep();
               
-              // Linear Mapping:
-              // 0m (On top of it) -> 150ms
-              // 200m (Barely visible) -> 2000ms
-              const t = minDistanceMeters / MAX_RANGE; // 0.0 to 1.0
-              const interval = 150 + (t * 1850); 
+              // Steeper Curve Calculation
+              // t is 0.0 (close) to 1.0 (far)
+              const t = minDistanceMeters / MAX_RANGE; 
+              
+              // Quadratic curve: Makes values stay low (fast) for longer when close
+              // Close (0m) -> 100ms
+              // Mid (50m, t=0.5) -> 100 + 0.25*1900 = 575ms
+              // Far (100m, t=1.0) -> 100 + 1900 = 2000ms
+              const interval = 100 + (Math.pow(t, 2) * 1900);
               
               timeoutId = setTimeout(pingLoop, interval);
           } else {
@@ -369,7 +436,7 @@ export default function App() {
           isRunning = false;
           clearTimeout(timeoutId);
       };
-  }, [isSonarActive, view]); // Removed 'cell' dependency so it doesn't glitch on cell crossing
+  }, [isSonarActive, view]); 
 
 
   // --- 5. ACTIONS ---
@@ -438,16 +505,18 @@ export default function App() {
       // Deduct the medical bill ($1000)
       setBalance(prev => prev - 1000);
       setHp(50);
+      setImmunityExpiry(Date.now() + 60000); // 1 Minute Immunity
       setView('SCANNER');
-      addLog("Medical Bill Paid.");
+      addLog("Medical Bill Paid. Immunity Active (60s).");
   };
 
   const handleDirectPayRevive = () => {
       if (balance >= 1000) {
           setBalance(prev => prev - 1000);
           setHp(50);
+          setImmunityExpiry(Date.now() + 60000); // 1 Minute Immunity
           setView('SCANNER');
-          addLog("Medical Bill Paid.");
+          addLog("Medical Bill Paid. Immunity Active (60s).");
       }
   };
 
@@ -459,23 +528,11 @@ export default function App() {
   };
 
   const buyRangeBoost = () => {
-      if (balance >= 5000) {
-          setBalance(prev => prev - 5000);
-          setDetectorExpiry(Date.now() + 10 * 60 * 1000); 
-          addLog(`Detector Range Boosted. +${XP_VALUES.BUY_DETECTOR} XP.`);
-          setView('SCANNER');
-          setXp(p => p + XP_VALUES.BUY_DETECTOR);
-      }
+      // Disabled in shop
   };
 
   const buySonar = () => {
-      if (balance >= 2500) {
-          setBalance(prev => prev - 2500);
-          setSonarExpiry(Date.now() + 5 * 60 * 1000); // 5 minutes
-          addLog(`Sonar Module Active. +${XP_VALUES.BUY_SONAR} XP.`);
-          setView('SCANNER');
-          setXp(p => p + XP_VALUES.BUY_SONAR);
-      }
+      // Disabled in shop
   };
   
   const formatYear = (year: number) => {
@@ -552,21 +609,15 @@ export default function App() {
                     <span className="text-white font-bold text-xs">${balance.toLocaleString()}</span>
                 </div>
 
-                 {/* Detector Timer */}
-                 {isDetectorBoosted && (
-                    <div className="flex items-center gap-2 text-[10px] text-green-400 bg-green-900/20 px-2 py-1 rounded border border-green-900/50 animate-in fade-in slide-in-from-top-1">
-                        <ScanLine size={10} />
-                        <span>{Math.floor(detectorTimeLeft/60)}:{(detectorTimeLeft%60).toString().padStart(2,'0')}</span>
+                 {/* Immunity Timer */}
+                 {isImmune && (
+                    <div className="flex items-center gap-2 text-[10px] text-blue-400 bg-blue-900/20 px-2 py-1 rounded border border-blue-900/50 animate-pulse">
+                        <ShieldAlert size={10} />
+                        <span>IMMUNITY ACTIVE</span>
                     </div>
                  )}
 
-                 {/* Sonar Timer */}
-                 {isSonarActive && (
-                    <div className="flex items-center gap-2 text-[10px] text-indigo-400 bg-indigo-900/20 px-2 py-1 rounded border border-indigo-900/50 animate-in fade-in slide-in-from-top-1">
-                        <Radar size={10} />
-                        <span>{Math.floor(sonarTimeLeft/60)}:{(sonarTimeLeft%60).toString().padStart(2,'0')}</span>
-                    </div>
-                 )}
+                 {/* Tools are now always active, hiding labels as requested */}
             </div>
       </div>
 
@@ -574,7 +625,8 @@ export default function App() {
       <div className={`absolute inset-0 flex flex-col transition-opacity duration-500 ${view === 'SCANNER' ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
             
             {/* Background Hostile Effect */}
-            {isHostile && <div className="absolute inset-0 bg-red-900/20 animate-pulse pointer-events-none z-10"></div>}
+            {isHostile && !isImmune && <div className="absolute inset-0 bg-red-900/20 animate-pulse pointer-events-none z-10"></div>}
+            {isHostile && isImmune && <div className="absolute inset-0 bg-blue-900/10 pointer-events-none z-10"></div>}
 
             {/* The Grid */}
             <div className="flex-1 flex items-center justify-center relative">
@@ -648,47 +700,45 @@ export default function App() {
                     
                     <div className="w-full space-y-4 mb-8">
                         {/* Metal Detector Upgrade */}
-                        <div className="bg-zinc-900 border border-zinc-700 p-4 rounded-lg flex items-center justify-between">
+                        <div className="bg-zinc-900 border border-zinc-700 p-4 rounded-lg flex items-center justify-between opacity-50">
                             <div className="flex items-center gap-3">
                                     <div className="bg-green-900/30 p-2 rounded text-green-400">
                                     <ScanLine size={24} />
                                     </div>
                                     <div className="text-left">
-                                        <div className="text-white text-sm font-bold">Range Booster</div>
-                                        <div className="text-zinc-500 text-[10px]">Boost to 80m (10m)</div>
+                                        <div className="text-white text-sm font-bold">Standard Detector</div>
+                                        <div className="text-zinc-500 text-[10px]">80m Range Enabled</div>
                                     </div>
                             </div>
                             <div className="flex flex-col items-end gap-2">
-                                <span className="text-green-400 font-mono text-sm">$5,000</span>
+                                <span className="text-zinc-600 font-mono text-sm">--</span>
                                 <button 
-                                    onClick={buyRangeBoost}
-                                    disabled={balance < 5000}
-                                    className={`bg-white text-black text-[10px] font-bold px-3 py-1 rounded uppercase tracking-wider ${balance < 5000 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-zinc-200'}`}
+                                    disabled
+                                    className="bg-zinc-800 text-zinc-500 text-[10px] font-bold px-3 py-1 rounded uppercase tracking-wider cursor-not-allowed"
                                 >
-                                    Buy
+                                    EQUIPPED
                                 </button>
                             </div>
                         </div>
 
                         {/* Sonar */}
-                        <div className="bg-zinc-900 border border-zinc-700 p-4 rounded-lg flex items-center justify-between">
+                        <div className="bg-zinc-900 border border-zinc-700 p-4 rounded-lg flex items-center justify-between opacity-50">
                             <div className="flex items-center gap-3">
                                     <div className="bg-indigo-900/30 p-2 rounded text-indigo-400">
                                     <Radar size={24} />
                                     </div>
                                     <div className="text-left">
                                         <div className="text-white text-sm font-bold">Sonar Module</div>
-                                        <div className="text-zinc-500 text-[10px]">5m Battery Life</div>
+                                        <div className="text-zinc-500 text-[10px]">Always Active</div>
                                     </div>
                             </div>
                             <div className="flex flex-col items-end gap-2">
-                                <span className="text-green-400 font-mono text-sm">$2,500</span>
+                                <span className="text-zinc-600 font-mono text-sm">--</span>
                                 <button 
-                                    onClick={buySonar}
-                                    disabled={balance < 2500}
-                                    className={`bg-white text-black text-[10px] font-bold px-3 py-1 rounded uppercase tracking-wider ${balance < 2500 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-zinc-200'}`}
+                                    disabled
+                                    className="bg-zinc-800 text-zinc-500 text-[10px] font-bold px-3 py-1 rounded uppercase tracking-wider cursor-not-allowed"
                                 >
-                                    Buy
+                                    EQUIPPED
                                 </button>
                             </div>
                         </div>

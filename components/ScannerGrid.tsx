@@ -202,10 +202,16 @@ export const ScannerGrid: React.FC<ScannerGridProps> = ({ isHostile, playerPos, 
 
               const type = getCellType(cx, cy);
               
-              // Only render interesting things (Coins/Food)
-              if (type === 'COIN' || type === 'FOOD') {
+              // Render Coins, Food, Hostiles, and Shops in detector
+              if (type === 'COIN' || type === 'FOOD' || type === 'HOSTILE' || type === 'SHOP') {
                    const { x, y } = getScreenPos(cx, cy);
-                   const content = getIconContent(type, '#4ade80', false); // Green tint for detector
+                   
+                   // Color coding for detector view
+                   let color = '#4ade80'; // Green default
+                   if (type === 'HOSTILE') color = '#ef4444'; // Red
+                   if (type === 'SHOP') color = '#60a5fa'; // Blue
+
+                   const content = getIconContent(type, color, false);
                    
                    elements.push(
                         <g key={`hid-${key}`} transform={`translate(${x}, ${y})`}>
