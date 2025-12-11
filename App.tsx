@@ -211,6 +211,9 @@ export default function App() {
 
   // Cell Entry Logic (Update Cell Type & Visited)
   useEffect(() => {
+    // Prevent background logic running on start screen
+    if (view !== 'SCANNER') return;
+
     const type = getCellType(cell.x, cell.y);
     setCellType(type);
     const key = `${cell.x},${cell.y}`;
@@ -243,7 +246,7 @@ export default function App() {
          // Hold bright for 200ms, then let CSS transition take over to fade out
          flashTimeoutRef.current = setTimeout(() => setGreenFlash(false), 200); 
     }
-  }, [cell, addLog]); 
+  }, [cell, addLog, view]); 
 
   // Analyzing Timer
   useEffect(() => {

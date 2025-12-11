@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { CellType, getCellType } from '../utils/gameLogic';
 import { Skull, ShoppingBag, Utensils } from 'lucide-react';
 
@@ -11,6 +11,14 @@ interface ScannerGridProps {
   visited: Record<string, CellType>;
   detectorRange: number; // In Meters
   gps: { lat: number, lon: number } | null;
+}
+
+interface Footstep {
+    id: number;
+    x: number;
+    y: number;
+    angle: number;
+    isRight: boolean;
 }
 
 export const ScannerGrid: React.FC<ScannerGridProps> = ({ isHostile, playerPos, visited, detectorRange, gps }) => {
@@ -27,6 +35,61 @@ export const ScannerGrid: React.FC<ScannerGridProps> = ({ isHostile, playerPos, 
   // Map Refs
   const mapRef = useRef<any>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
+
+  // --- FOOTSTEPS LOGIC ---
+  const [footsteps, setFootsteps] = useState<Footstep[]>([]);
+  const lastStepPos = useRef(playerPos); 
+  const stepCount = useRef(0);
+  const STEP_SPACING = 5.0; // Meters (Increased to 5m for sparse trail)
+  const TRAIL_LENGTH_METERS = 25; // Meters
+
+  useEffect(() => {
+    // Calculate distance moved since last step
+    const dx = playerPos.x - lastStepPos.current.x;
+    const dy = playerPos.y - lastStepPos.current.y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+
+    // If moved enough to plant a foot
+    if (dist >= STEP_SPACING) {
+        const angleRad = Math.atan2(dy, dx);
+        const angleDeg = angleRad * (180 / Math.PI);
+        
+        // Offset Logic for Left/Right foot
+        const isRight = stepCount.current % 2 === 0;
+        const sideOffset = 2.0; // 2.0m offset from center line (Wide stance for visual clarity)
+        const sideMult = isRight ? 1 : -1;
+        
+        // Normal vector (Right) relative to North-Up coordinate system
+        // Angle 0 (East) -> Right is South (0, -1)
+        const nx = Math.sin(angleRad);
+        const ny = -Math.cos(angleRad);
+        
+        // Place step at the PREVIOUS position (where the foot pushed off)
+        const stepX = lastStepPos.current.x + (nx * sideOffset * sideMult);
+        const stepY = lastStepPos.current.y + (ny * sideOffset * sideMult);
+
+        const newStep: Footstep = {
+            id: Date.now() + stepCount.current,
+            x: stepX,
+            y: stepY,
+            angle: angleDeg,
+            isRight
+        };
+
+        setFootsteps(prev => {
+            const maxSteps = Math.ceil(TRAIL_LENGTH_METERS / STEP_SPACING);
+            const next = [...prev, newStep];
+            if (next.length > maxSteps) {
+                return next.slice(next.length - maxSteps);
+            }
+            return next;
+        });
+
+        lastStepPos.current = playerPos;
+        stepCount.current++;
+    }
+  }, [playerPos]);
+
 
   // Map Initialization
   useEffect(() => {
@@ -111,6 +174,16 @@ export const ScannerGrid: React.FC<ScannerGridProps> = ({ isHostile, playerPos, 
     return {
         x: CENTER + relX,
         y: CENTER - relY
+    };
+  };
+
+  // Helper for arbitrary meter points (Footsteps)
+  const getScreenPoint = (mx: number, my: number) => {
+    const relX = (mx - playerPos.x) * PIXELS_PER_METER;
+    const relY = (my - playerPos.y) * PIXELS_PER_METER;
+    return { 
+        x: CENTER + relX, 
+        y: CENTER - relY 
     };
   };
 
@@ -296,6 +369,30 @@ export const ScannerGrid: React.FC<ScannerGridProps> = ({ isHostile, playerPos, 
                 strokeWidth="2" 
                 className={`${isHostile ? 'text-red-500 animate-pulse' : 'text-zinc-500'}`} 
             />
+
+            {/* Footstep Trail - Rendered under player but over grid */}
+            {footsteps.map((step, i) => {
+                const pos = getScreenPoint(step.x, step.y);
+                const opacity = (Math.max(0, (i + 1) / footsteps.length)) * 0.5; // Reduced max opacity
+                
+                // SVG Rotate is clockwise. Math angle is counter-clockwise from East.
+                // 0 Math (East) -> 90 SVG (Right)
+                // 90 Math (North) -> 0 SVG (Up)
+                const rot = 90 - step.angle;
+
+                return (
+                    <g key={step.id} transform={`translate(${pos.x}, ${pos.y}) rotate(${rot})`} opacity={opacity}>
+                         {/* Symbolic Footprint (Rounded Rect) */}
+                         <rect 
+                            x="-1.5" y="-3.5" 
+                            width="3" height="7" 
+                            rx="1.5" 
+                            fill="white" 
+                            className="drop-shadow-lg"
+                        />
+                    </g>
+                );
+            })}
 
             {/* Visited Cells (Always Visible) */}
             {renderVisitedCells()}
