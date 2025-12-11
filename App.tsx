@@ -219,6 +219,13 @@ export default function App() {
     const key = `${cell.x},${cell.y}`;
     const wasVisited = visitedRef.current[key];
     
+    // Auto-visit EMPTY cells immediately
+    if (type === 'EMPTY' && !wasVisited) {
+        addLog(`Area Empty. +${XP_VALUES.SCAN_EMPTY} XP.`);
+        setVisited(prev => ({ ...prev, [key]: 'EMPTY' }));
+        setXp(p => p + XP_VALUES.SCAN_EMPTY);
+    }
+
     if (type === 'HOSTILE') {
         if (!wasVisited) {
             addLog("ALERT: HOSTILE ENTITY DETECTED.");
@@ -680,7 +687,8 @@ export default function App() {
                         : 'bg-white text-black disabled:bg-zinc-800 disabled:text-zinc-500 hover:bg-zinc-200' 
                     }`}
                 >
-                    {hp <= 0 ? 'Exhausted' : isAnalyzing ? 'Analyzing...' : isShop && isVisited ? 'Enter Shop' : isVisited ? 'Area Cleared' : 'Excavate'}
+                    {/* Prioritize 'Area Cleared' over 'Analyzing...' to prevent flashing on auto-visited empty cells */}
+                    {hp <= 0 ? 'Exhausted' : isShop && isVisited ? 'Enter Shop' : isVisited ? 'Area Cleared' : isAnalyzing ? 'Analyzing...' : 'Excavate'}
                 </button>
             </div>
       </div>
