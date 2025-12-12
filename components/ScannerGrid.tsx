@@ -1,9 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { CellType, getCellType } from '../utils/gameLogic';
 import { Skull, ShoppingBag, Utensils } from 'lucide-react';
-
-// Declare Leaflet global
-declare const L: any;
+import L from 'leaflet';
 
 interface ScannerGridProps {
   isHostile: boolean;
@@ -95,9 +93,6 @@ export const ScannerGrid: React.FC<ScannerGridProps> = ({ isHostile, playerPos, 
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
     
-    // Check if Leaflet is loaded
-    if (typeof L === 'undefined') return;
-
     // Create Map
     // We initialize with a default view to ensure the map instance is fully ready
     // even before the GPS signal locks on.
@@ -114,8 +109,7 @@ export const ScannerGrid: React.FC<ScannerGridProps> = ({ isHostile, playerPos, 
         touchZoom: false,
         scrollWheelZoom: false,
         doubleClickZoom: false,
-        boxZoom: false,
-        tap: false
+        boxZoom: false
     });
     
     // --- TILE LAYER CONFIGURATION ---

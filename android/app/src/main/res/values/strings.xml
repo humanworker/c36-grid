@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">C-36 Grid</string>
+    <string name="title_activity_main">C-36 Grid</string>
+    <string name="package_name">com.c36grid.app</string>
+    <string name="custom_url_scheme">com.c36grid.app</string>
+</resources>

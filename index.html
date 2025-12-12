@@ -6,9 +6,6 @@
     <meta name="theme-color" content="#000000" />
     <link rel="manifest" href="/manifest.json" />
     <title>C-36 Grid</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     <style>
       @import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap');
       
@@ -18,32 +15,8 @@
         color: #eee;
         overscroll-behavior: none;
       }
-      
-      /* Custom Dither Pattern */
-      .bg-dither {
-        background-image: radial-gradient(#333 15%, transparent 16%), radial-gradient(#333 15%, transparent 16%);
-        background-size: 4px 4px;
-        background-position: 0 0, 2px 2px;
-      }
-
-      /* Hide Scrollbar */
-      .no-scrollbar::-webkit-scrollbar {
-        display: none;
-      }
-      .no-scrollbar {
-        -ms-overflow-style: none;
-        scrollbar-width: none;
-      }
-      
-      /* Leaflet Override to hide attribution if desired for minimal look (optional) */
-      .leaflet-control-attribution {
-        background: rgba(0,0,0,0.5) !important;
-        color: #555 !important;
-        font-size: 8px !important;
-      }
     </style>
-<link rel="stylesheet" href="/index.css">
-<script type="importmap">
+  <script type="importmap">
 {
   "imports": {
     "react": "https://aistudiocdn.com/react@^19.2.1",
@@ -53,7 +26,10 @@
     "@capacitor/geolocation": "https://aistudiocdn.com/@capacitor/geolocation@^8.0.0",
     "path": "https://aistudiocdn.com/path@^0.12.7",
     "vite": "https://aistudiocdn.com/vite@^7.2.7",
-    "@vitejs/plugin-react": "https://aistudiocdn.com/@vitejs/plugin-react@^5.1.2"
+    "@vitejs/plugin-react": "https://aistudiocdn.com/@vitejs/plugin-react@^5.1.2",
+    "@capacitor/cli": "https://aistudiocdn.com/@capacitor/cli@^8.0.0",
+    "leaflet": "https://aistudiocdn.com/leaflet@^1.9.4",
+    "leaflet/": "https://aistudiocdn.com/leaflet@^1.9.4/"
   }
 }
 </script>
