@@ -12,6 +12,9 @@ import { ShoppingBag, ScanLine, MapPin, Radar, ShieldAlert } from 'lucide-react'
 import { latLonToMeters, getDistance } from './utils/geo';
 import { loadGameState, saveGameState } from './utils/storage';
 
+// Capacitor Imports
+import { Geolocation } from '@capacitor/geolocation';
+
 type ViewState = 'START' | 'SCANNER' | 'INVENTORY' | 'DISCOVERY' | 'EXHAUSTION' | 'SHOP' | 'WORKBENCH';
 type VisitedMap = Record<string, CellType>;
 
@@ -134,29 +137,55 @@ export default function App() {
       if (view === 'START') return;
       if (manualMode) return; // Don't use GPS in manual mode
 
-      if ('geolocation' in navigator) {
-          const watchId = navigator.geolocation.watchPosition(
-              (position) => {
-                  const { latitude, longitude } = position.coords;
-                  setGps({ lat: latitude, lon: longitude });
-                  
-                  // Convert to Game Grid Meters
-                  const newMeters = latLonToMeters(latitude, longitude);
+      let watchId: string | null = null;
 
-                  // Drift Protection: Only update if moved > 2 meters
-                  if (!lastGpsUpdate.current || getDistance(lastGpsUpdate.current, newMeters) > 2) {
-                      setPos(newMeters);
-                      lastGpsUpdate.current = newMeters;
-                  }
-              },
-              (err) => {
-                  console.error("GPS Error", err);
-                  addLog("ERR: GPS Signal Lost.");
-              },
-              { enableHighAccuracy: true, maximumAge: 0 }
-          );
-          return () => navigator.geolocation.clearWatch(watchId);
-      }
+      const startWatching = async () => {
+          try {
+              // Request permissions explicitly for Android 10+
+              const perm = await Geolocation.requestPermissions();
+              
+              if (perm.location === 'granted') {
+                  // Capacitor Watch Position
+                  watchId = await Geolocation.watchPosition(
+                      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
+                      (position, err) => {
+                          if (err) {
+                              console.error("GPS Error", err);
+                              addLog("ERR: GPS Signal Lost.");
+                              return;
+                          }
+
+                          if (position) {
+                                const { latitude, longitude } = position.coords;
+                                setGps({ lat: latitude, lon: longitude });
+                                
+                                // Convert to Game Grid Meters
+                                const newMeters = latLonToMeters(latitude, longitude);
+
+                                // Drift Protection: Only update if moved > 2 meters
+                                if (!lastGpsUpdate.current || getDistance(lastGpsUpdate.current, newMeters) > 2) {
+                                    setPos(newMeters);
+                                    lastGpsUpdate.current = newMeters;
+                                }
+                          }
+                      }
+                  );
+              } else {
+                  addLog("ERR: Location Permission Denied");
+              }
+          } catch (e) {
+              console.error("GPS Init Failed", e);
+              addLog("ERR: GPS Initialization Failed.");
+          }
+      };
+
+      startWatching();
+
+      return () => {
+          if (watchId) {
+              Geolocation.clearWatch({ id: watchId });
+          }
+      };
   }, [view, manualMode, addLog]);
 
   // Manual Movement Loop (Dev Mode)
@@ -474,27 +503,21 @@ export default function App() {
       if (audioCtxRef.current?.state === 'suspended') {
           audioCtxRef.current.resume();
       }
-
-      // Request Permission
-      if ('geolocation' in navigator) {
-          navigator.geolocation.getCurrentPosition(
-              (pos) => {
-                  const m = latLonToMeters(pos.coords.latitude, pos.coords.longitude);
-                  setPos(m);
-                  setGps({ lat: pos.coords.latitude, lon: pos.coords.longitude });
-                  setView('SCANNER');
-                  addLog("GPS Connected. System Online.");
-              },
-              (err) => alert("GPS Permission is required to play.")
-          );
+      
+      // Initialize GPS
+      if (manualMode) {
+          setGps({ lat: 51.505, lon: -0.09 }); 
+          setView('SCANNER');
+          addLog("DEV: Manual Mode Active.");
       } else {
-          alert("GPS not supported on this device.");
+          // The useEffect responsible for GPS will take over when view becomes SCANNER
+          setView('SCANNER');
+          addLog("System Online. Awaiting GPS...");
       }
   };
 
   const handleDevBypass = () => {
       setManualMode(true);
-      // Initialize a default GPS location so the map layer works
       setGps({ lat: 51.505, lon: -0.09 }); 
       setView('SCANNER');
       addLog("DEV: System Bypassed. Manual Mode ON.");

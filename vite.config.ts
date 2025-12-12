@@ -5,7 +5,7 @@ import react from '@vitejs/plugin-react';
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
     return {
-      base: '/c36-grid/', // <--- ADD THIS LINE
+      base: './', // CHANGED: Relative path for Capacitor/Android
       server: {
         port: 3000,
         host: '0.0.0.0',
