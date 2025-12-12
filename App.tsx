@@ -136,14 +136,14 @@ export default function App() {
   // Delta clear effects
   useEffect(() => {
     if (hpDelta !== null) {
-        const t = setTimeout(() => setHpDelta(null), 500); // 0.5s flash
+        const t = setTimeout(() => setHpDelta(null), 2000); // 0.5s flash
         return () => clearTimeout(t);
     }
   }, [hpDelta]);
 
   useEffect(() => {
     if (xpDelta !== null) {
-        const t = setTimeout(() => setXpDelta(null), 500); // 0.5s flash
+        const t = setTimeout(() => setXpDelta(null), 2000); // 0.5s flash
         return () => clearTimeout(t);
     }
   }, [xpDelta]);
