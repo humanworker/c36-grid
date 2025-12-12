@@ -50,15 +50,15 @@ const ODDS_GUIDE = [
 ];
 
 const RARITY_GUIDE = [
-    { metal: 'Platinum', score: '10.0', rarity: 'Very High' },
-    { metal: 'Gold', score: '9.5', rarity: 'High' },
-    { metal: 'Silver', score: '8.0', rarity: 'High' },
-    { metal: 'Bronze', score: '6.5', rarity: 'Medium' },
-    { metal: 'Aluminium', score: '5.0', rarity: 'Medium' },
-    { metal: 'Brass', score: '4.0', rarity: 'Medium' },
-    { metal: 'Zinc', score: '3.0', rarity: 'Low' },
-    { metal: 'Nickel', score: '2.0', rarity: 'Low' },
-    { metal: 'Copper', score: '1.0', rarity: 'Common' },
+    { metal: 'Platinum', chance: '1%', rarity: 'Ultra Rare' },
+    { metal: 'Gold', chance: '2%', rarity: 'Very Rare' },
+    { metal: 'Silver', chance: '5%', rarity: 'Rare' },
+    { metal: 'Bronze', chance: '8%', rarity: 'Uncommon' },
+    { metal: 'Aluminium', chance: '10%', rarity: 'Uncommon' },
+    { metal: 'Brass', chance: '12%', rarity: 'Common' },
+    { metal: 'Zinc', chance: '15%', rarity: 'Common' },
+    { metal: 'Nickel', chance: '20%', rarity: 'Very Common' },
+    { metal: 'Copper', chance: '27%', rarity: 'Abundant' },
 ];
 
 
@@ -416,16 +416,16 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                 <div className="space-y-4">
                     <div className="flex items-center gap-2 text-white border-b border-zinc-800 pb-2">
                         <Circle size={16} className="text-yellow-500" />
-                        <h3 className="text-sm font-bold uppercase tracking-widest">Coin Value (Metal)</h3>
+                        <h3 className="text-sm font-bold uppercase tracking-widest">Coin Rarity</h3>
                     </div>
                      <div className="grid gap-2">
                         {RARITY_GUIDE.map((item, i) => (
                             <div key={i} className="flex items-center justify-between bg-zinc-900/30 p-3 rounded border border-zinc-800">
                                 <div className="flex flex-col">
                                     <span className="text-zinc-300 text-xs font-bold">{item.metal}</span>
-                                    <span className="text-zinc-600 text-[10px] uppercase tracking-wide">{item.rarity} Rarity</span>
+                                    <span className="text-zinc-600 text-[10px] uppercase tracking-wide">{item.rarity}</span>
                                 </div>
-                                <span className="text-white font-mono text-xs">{item.score}</span>
+                                <span className="text-white font-mono text-xs">{item.chance}</span>
                             </div>
                         ))}
                     </div>

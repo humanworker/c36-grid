@@ -115,12 +115,22 @@ export const TOOLSHOP_CATALOG: ShopItemDef[] = [
 
 // --- USER GENERATED PRESETS ---
 
+// Weighted Probability Distribution (Total 100 entries)
+const BASE_METALS_WEIGHTED: CoinMetal[] = [
+    ...Array(1).fill(CoinMetal.Platinum),  // 1%
+    ...Array(2).fill(CoinMetal.Gold),      // 2%
+    ...Array(5).fill(CoinMetal.Silver),    // 5%
+    ...Array(8).fill(CoinMetal.Bronze),    // 8%
+    ...Array(10).fill(CoinMetal.Aluminium),// 10%
+    ...Array(12).fill(CoinMetal.Brass),    // 12%
+    ...Array(15).fill(CoinMetal.Zinc),     // 15%
+    ...Array(20).fill(CoinMetal.Nickel),   // 20%
+    ...Array(27).fill(CoinMetal.Copper),   // 27%
+];
+
 // "Generator 1" - Ancient, high jitter, detailed floral patterns
 export const GENERATOR_ANCIENT: DesignProfile = {
-    allowedMetals: [
-      CoinMetal.Gold, CoinMetal.Silver, CoinMetal.Bronze, CoinMetal.Copper, 
-      CoinMetal.Nickel, CoinMetal.Zinc, CoinMetal.Brass, CoinMetal.Aluminium, CoinMetal.Platinum
-    ],
+    allowedMetals: BASE_METALS_WEIGHTED,
     yearRange: { min: -500, max: 1800 },
     allowedPatterns: [
       CoinPattern.Geometric, CoinPattern.Stars, CoinPattern.Circles, CoinPattern.Bricks, 
