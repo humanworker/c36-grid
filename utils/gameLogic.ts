@@ -1,6 +1,6 @@
 import { 
     CoinData, CoinMetal, CoinCondition, CoinBorder, CoinSize, CoinPattern, 
-    Artifact, ArtifactType, DesignProfile, Range,
+    Artifact, ArtifactType, DesignProfile, Range, ItemData,
     METAL_WEIGHTS, CONDITION_SCORES 
 } from '../types';
 
@@ -10,11 +10,94 @@ export const XP_VALUES = {
     SCAN_EMPTY: 1,
     SCAN_ITEM: 10,
     SCAN_FOOD: 10,
-    BUY_DETECTOR: 100,
-    BUY_SONAR: 100,
+    BUY_ITEM: 50,
     DEATH_PENALTY: 500,
     LEVEL_THRESHOLD: 1000
 };
+
+// --- CATALOGS ---
+
+export interface ShopItemDef {
+    id: string;
+    type: ArtifactType;
+    name: string;
+    description: string;
+    cost: number;
+    levelReq: number;
+    effectType: 'HEAL' | 'RANGE_BOOST' | 'SONAR_BOOST' | 'IMMUNITY';
+    effectValue: number;
+    shelfLifeMs?: number; // Only for food
+}
+
+export const SUPERMARKET_CATALOG: ShopItemDef[] = [
+    {
+        id: 'food-ration-1',
+        type: ArtifactType.FOOD,
+        name: 'Basic Rations',
+        description: 'Standard issue nutrient paste. Keeps for 24 hours.',
+        cost: 50,
+        levelReq: 1,
+        effectType: 'HEAL',
+        effectValue: 20,
+        shelfLifeMs: 24 * 60 * 60 * 1000 // 24 Hours
+    },
+    {
+        id: 'food-can-1',
+        type: ArtifactType.FOOD,
+        name: 'Canned Beans',
+        description: 'Preserved protein. Lasts a week.',
+        cost: 150,
+        levelReq: 2,
+        effectType: 'HEAL',
+        effectValue: 40,
+        shelfLifeMs: 7 * 24 * 60 * 60 * 1000 // 7 Days
+    },
+    {
+        id: 'food-mre-1',
+        type: ArtifactType.FOOD,
+        name: 'M.R.E.',
+        description: 'Military Meal Ready-to-Eat. Lasts 30 days.',
+        cost: 300,
+        levelReq: 4,
+        effectType: 'HEAL',
+        effectValue: 80,
+        shelfLifeMs: 30 * 24 * 60 * 60 * 1000 // 30 Days
+    }
+];
+
+export const TOOLSHOP_CATALOG: ShopItemDef[] = [
+    {
+        id: 'tool-battery-1',
+        type: ArtifactType.TOOL,
+        name: 'Signal Booster',
+        description: 'Boosts detector range for 10 minutes.',
+        cost: 200,
+        levelReq: 1,
+        effectType: 'RANGE_BOOST',
+        effectValue: 10 * 60 * 1000 // 10 mins
+    },
+    {
+        id: 'tool-sonar-1',
+        type: ArtifactType.TOOL,
+        name: 'Sonar Battery',
+        description: 'Powers the sonar module for 5 minutes.',
+        cost: 300,
+        levelReq: 2,
+        effectType: 'SONAR_BOOST',
+        effectValue: 5 * 60 * 1000 // 5 mins
+    },
+    {
+        id: 'tool-medkit-1',
+        type: ArtifactType.TOOL,
+        name: 'Stim-Pack',
+        description: 'Grants temporary immunity to environmental hazards (2 mins).',
+        cost: 500,
+        levelReq: 5,
+        effectType: 'IMMUNITY',
+        effectValue: 2 * 60 * 1000 
+    }
+];
+
 
 // --- USER GENERATED PRESETS ---
 
@@ -175,12 +258,6 @@ export const generateArtifact = (cellX: number, cellY: number): Artifact => {
             rarityScore = calculateCoinScore(data);
             monetaryValue = calculateCoinValue(data);
             break;
-            
-        // Future Case:
-        // case ArtifactType.MOSAIC:
-        //    data = generateMosaicData(cellX, cellY);
-        //    rarityScore = ...
-        //    break;
     }
 
     return {
@@ -191,6 +268,27 @@ export const generateArtifact = (cellX: number, cellY: number): Artifact => {
         data,
         rarityScore,
         monetaryValue
+    };
+};
+
+export const generateShopArtifact = (def: ShopItemDef): Artifact => {
+    const data: ItemData = {
+        name: def.name,
+        description: def.description,
+        effectValue: def.effectValue,
+        effectType: def.effectType,
+        shelfLifeMs: def.shelfLifeMs,
+        // Spoilage is set when purchased
+    };
+    
+    return {
+        id: `${def.id}-${Date.now()}`,
+        type: def.type,
+        foundAt: { x: 0, y: 0 },
+        foundDate: Date.now(),
+        rarityScore: 0,
+        monetaryValue: def.cost, // Represents Cost here
+        data
     };
 };
 
@@ -263,7 +361,7 @@ const generateCoinFromProfile = (cellX: number, cellY: number, profile: DesignPr
 
 // --- C-36 GRID PROCEDURAL GENERATION LOGIC ---
 
-export type CellType = 'EMPTY' | 'SHOP' | 'FOOD' | 'COIN' | 'HOSTILE';
+export type CellType = 'EMPTY' | 'SUPERMARKET' | 'TOOL_SHOP' | 'FOOD' | 'COIN' | 'HOSTILE';
 
 export const getCellType = (cellX: number, cellY: number): CellType => {
     const dot = cellX * 12.9898 + cellY * 78.233;
@@ -273,7 +371,12 @@ export const getCellType = (cellX: number, cellY: number): CellType => {
 
     if (masterScore >= 90) return 'HOSTILE'; // 10%
     if (masterScore >= 80) return 'COIN';    // 10%
-    if (masterScore >= 70) return 'FOOD';    // 10% (Reduced from 20%)
-    if (masterScore === 59) return 'SHOP';   // 1%
+    if (masterScore >= 70) return 'FOOD';    // 10%
+    if (masterScore === 59) {
+        // Split 1% Shop chance into two types
+        // Use coordinates to determine type deterministically
+        const subHash = Math.abs(cellX + cellY) % 2;
+        return subHash === 0 ? 'SUPERMARKET' : 'TOOL_SHOP';
+    }
     return 'EMPTY';                          // 69%
 };

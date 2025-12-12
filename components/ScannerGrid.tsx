@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { CellType, getCellType } from '../utils/gameLogic';
-import { Skull, ShoppingBag, Utensils } from 'lucide-react';
+import { Skull, ShoppingCart, Wrench, Apple } from 'lucide-react';
 import L from 'leaflet';
 
 interface ScannerGridProps {
@@ -94,8 +94,6 @@ export const ScannerGrid: React.FC<ScannerGridProps> = ({ isHostile, playerPos, 
     if (!mapContainerRef.current || mapRef.current) return;
     
     // Create Map
-    // We initialize with a default view to ensure the map instance is fully ready
-    // even before the GPS signal locks on.
     const map = L.map(mapContainerRef.current, {
         center: [0, 0],
         zoom: 2,
@@ -112,11 +110,6 @@ export const ScannerGrid: React.FC<ScannerGridProps> = ({ isHostile, playerPos, 
         boxZoom: false
     });
     
-    // --- TILE LAYER CONFIGURATION ---
-    
-    // STADIA MAPS: Stamen Toner Dark
-    // Using the 'styles' endpoint to rasterize the vector style ID provided.
-    // Domain authentication is enabled, so no API Key is passed in the URL.
     L.tileLayer('https://tiles.stadiamaps.com/styles/stamen_toner_dark/{z}/{x}/{y}{r}.png', {
         maxZoom: 20,
         attribution: '&copy; <a href="https://stadiamaps.com/">Stadia Maps</a>',
@@ -124,8 +117,6 @@ export const ScannerGrid: React.FC<ScannerGridProps> = ({ isHostile, playerPos, 
 
     mapRef.current = map;
 
-    // CRITICAL FIX: Invalidate size after mount to ensure map renders in Flex container
-    // Increased delay to 500ms to be robust against slower layout recalculations
     setTimeout(() => {
         map.invalidateSize();
         if (gps) {
@@ -137,12 +128,11 @@ export const ScannerGrid: React.FC<ScannerGridProps> = ({ isHostile, playerPos, 
         map.remove();
         mapRef.current = null;
     };
-  }, []); // Empty dependency array = runs once on mount
+  }, []); 
 
   // Sync Map with GPS
   useEffect(() => {
       if (mapRef.current && gps) {
-          // Robustness check: Ensure map size is calculated
           mapRef.current.invalidateSize(); 
           mapRef.current.setView([gps.lat, gps.lon], 18, { animate: true }); 
       }
@@ -190,7 +180,6 @@ export const ScannerGrid: React.FC<ScannerGridProps> = ({ isHostile, playerPos, 
   const getIconContent = (type: CellType, color: string, pulse: boolean = false) => {
       const cls = pulse ? "animate-pulse" : "";
       if (type === 'EMPTY') {
-          // Geometric Cross (X) instead of Text
           return (
              <g className={cls}>
                  <path 
@@ -205,17 +194,25 @@ export const ScannerGrid: React.FC<ScannerGridProps> = ({ isHostile, playerPos, 
           return (
             <foreignObject x="-12" y="-12" width="24" height="24" className={cls}>
                  <div className="flex items-center justify-center w-full h-full">
-                    <Utensils size={18} color={color} />
+                    <Apple size={18} color={color} />
                  </div>
             </foreignObject>
           );
       } else if (type === 'COIN') {
           return <circle r="15" stroke={color} strokeWidth="3" fill="none" className={cls} />;
-      } else if (type === 'SHOP') {
+      } else if (type === 'SUPERMARKET') {
           return (
             <foreignObject x="-12" y="-12" width="24" height="24" className={cls}>
                  <div className="flex items-center justify-center w-full h-full">
-                    <ShoppingBag size={20} color={color} />
+                    <ShoppingCart size={20} color={color} />
+                 </div>
+            </foreignObject>
+          );
+      } else if (type === 'TOOL_SHOP') {
+          return (
+            <foreignObject x="-12" y="-12" width="24" height="24" className={cls}>
+                 <div className="flex items-center justify-center w-full h-full">
+                    <Wrench size={20} color={color} />
                  </div>
             </foreignObject>
           );
@@ -272,13 +269,13 @@ export const ScannerGrid: React.FC<ScannerGridProps> = ({ isHostile, playerPos, 
               const type = getCellType(cx, cy);
               
               // Render Coins, Food, Hostiles, and Shops in detector
-              if (type === 'COIN' || type === 'FOOD' || type === 'HOSTILE' || type === 'SHOP') {
+              if (type === 'COIN' || type === 'FOOD' || type === 'HOSTILE' || type === 'SUPERMARKET' || type === 'TOOL_SHOP') {
                    const { x, y } = getScreenPos(cx, cy);
                    
                    // Color coding for detector view
                    let color = '#4ade80'; // Green default
                    if (type === 'HOSTILE') color = '#ef4444'; // Red
-                   if (type === 'SHOP') color = '#60a5fa'; // Blue
+                   if (type === 'SUPERMARKET' || type === 'TOOL_SHOP') color = '#60a5fa'; // Blue
                    // Food uses Green default
 
                    const content = getIconContent(type, color, false);
@@ -326,7 +323,6 @@ export const ScannerGrid: React.FC<ScannerGridProps> = ({ isHostile, playerPos, 
                         <stop offset="50%" stopColor="white" stopOpacity="1"/>
                         <stop offset="100%" stopColor="white" stopOpacity="0"/>
                     </radialGradient>
-                    {/* The circle size changes based on detector range upgrades */}
                     <circle cx="150" cy="150" r={detectorRadiusPx} fill="url(#detectorGradient)" />
                 </mask>
             </defs>
@@ -364,19 +360,14 @@ export const ScannerGrid: React.FC<ScannerGridProps> = ({ isHostile, playerPos, 
                 className={`${isHostile ? 'text-red-500 animate-pulse' : 'text-zinc-500'}`} 
             />
 
-            {/* Footstep Trail - Rendered under player but over grid */}
+            {/* Footstep Trail */}
             {footsteps.map((step, i) => {
                 const pos = getScreenPoint(step.x, step.y);
-                const opacity = (Math.max(0, (i + 1) / footsteps.length)) * 0.5; // Reduced max opacity
-                
-                // SVG Rotate is clockwise. Math angle is counter-clockwise from East.
-                // 0 Math (East) -> 90 SVG (Right)
-                // 90 Math (North) -> 0 SVG (Up)
+                const opacity = (Math.max(0, (i + 1) / footsteps.length)) * 0.5;
                 const rot = 90 - step.angle;
 
                 return (
                     <g key={step.id} transform={`translate(${pos.x}, ${pos.y}) rotate(${rot})`} opacity={opacity}>
-                         {/* Symbolic Footprint (Rounded Rect) */}
                          <rect 
                             x="-1.5" y="-3.5" 
                             width="3" height="7" 
@@ -396,7 +387,6 @@ export const ScannerGrid: React.FC<ScannerGridProps> = ({ isHostile, playerPos, 
                 {renderHiddenItems()}
             </g>
 
-            {/* Detector Ring Hint (Optional: Shows the effective range boundary faintly) */}
             <circle cx="150" cy="150" r={detectorRadiusPx} fill="none" stroke="#4ade80" strokeWidth="1" strokeDasharray="2 4" opacity="0.2" />
 
             {/* Player Position Marker - Always Center */}

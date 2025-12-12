@@ -1,17 +1,22 @@
-import React, { useMemo, useState } from 'react';
-import { Artifact, ArtifactType, CoinData, CoinSize } from '../types';
+import React, { useMemo, useState, useEffect } from 'react';
+import { Artifact, ArtifactType, CoinData, CoinSize, ItemData } from '../types';
 import { ArtifactRenderer } from './ArtifactRenderer';
-import { X, Check, Palette, Move, Activity, ScanLine, Radar } from 'lucide-react';
+import { X, Check, Palette, Move, Activity, ScanLine, Radar, ChevronDown, ShoppingBag } from 'lucide-react';
 
 interface InventoryViewProps {
   items: Artifact[];
+  boutiqueItems: Artifact[]; // New: Potential items to buy
   onClose: () => void;
   mode?: 'VIEW' | 'REVIVE' | 'SELL';
   onRevive?: (selectedArtifacts: Artifact[]) => void;
-  onPayRevive?: () => void; // New Direct Pay Handler
+  onPayRevive?: () => void;
   onSell?: (selectedArtifacts: Artifact[]) => void;
-  balance: number; // Add balance to props
+  balance: number;
   
+  // Usage Handlers
+  onUseItem: (item: Artifact) => void;
+  onBuyBoutiqueItem: (item: Artifact) => void;
+
   // Dev props
   devInstantScan?: boolean;
   onToggleDevInstantScan?: () => void;
@@ -31,36 +36,56 @@ interface InventoryViewProps {
 }
 
 type SortOption = 'RECENT' | 'AGE' | 'RARITY' | 'STYLE'; 
+type Tab = 'COLLECTION' | 'TOOLS' | 'PANTRY' | 'BOUTIQUE';
 
 export const InventoryView: React.FC<InventoryViewProps> = ({ 
-  items, onClose, mode = 'VIEW', onRevive, onPayRevive, onSell, balance,
+  items, boutiqueItems, onClose, mode = 'VIEW', onRevive, onPayRevive, onSell, balance,
+  onUseItem, onBuyBoutiqueItem,
   devInstantScan, onToggleDevInstantScan, onDevAddCash, 
   isDetectorActive, onToggleDetector,
   isSonarActive, onToggleSonar,
   onOpenWorkbench,
   manualMode, onToggleManualMovement
 }) => {
+  const [currentTab, setCurrentTab] = useState<Tab>('COLLECTION');
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  
   const [sort, setSort] = useState<SortOption>('RECENT');
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
   const [internalMode, setInternalMode] = useState<'VIEW' | 'SELL'>('VIEW');
   const [showDev, setShowDev] = useState(false);
+  
+  // State for single item selection in Use mode
+  const [activeItemIndex, setActiveItemIndex] = useState<number | null>(null);
 
   // Determine actual effective mode
   const currentMode = mode === 'VIEW' ? internalMode : mode;
 
-  // Stats - Calculated from generic properties
-  const totalValue = items.reduce((acc, curr) => acc + curr.monetaryValue, 0);
-  const bestFind = items.reduce((max, curr) => Math.max(max, curr.monetaryValue), 0);
+  // --- FILTER ITEMS BASED ON TAB ---
+  const displayedItems = useMemo(() => {
+      if (currentTab === 'BOUTIQUE') return boutiqueItems;
+      
+      return items.filter(item => {
+          if (currentTab === 'COLLECTION') return item.type === ArtifactType.COIN;
+          if (currentTab === 'TOOLS') return item.type === ArtifactType.TOOL;
+          if (currentTab === 'PANTRY') return item.type === ArtifactType.FOOD;
+          return false;
+      });
+  }, [items, boutiqueItems, currentTab]);
+
+  // Stats - Calculated from Collection only
+  const collectionItems = items.filter(i => i.type === ArtifactType.COIN);
+  const totalValue = collectionItems.reduce((acc, curr) => acc + curr.monetaryValue, 0);
+  const bestFind = collectionItems.reduce((max, curr) => Math.max(max, curr.monetaryValue), 0);
 
   // Sorting Logic
   const sortedItems = useMemo(() => {
-    const list = items.map((item, index) => ({ item, originalIndex: index }));
+    const list = displayedItems.map((item, index) => ({ item, originalIndex: index }));
     
     switch (sort) {
       case 'RECENT': 
         return list.sort((a, b) => b.item.foundDate - a.item.foundDate); // Recent first
       case 'AGE':
-        // For coins, we use 'year'. 
         return list.sort((a, b) => {
             const yearA = (a.item.data as CoinData).year || 2025;
             const yearB = (b.item.data as CoinData).year || 2025;
@@ -69,32 +94,39 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
       case 'RARITY':
         return list.sort((a, b) => b.item.rarityScore - a.item.rarityScore);
       case 'STYLE':
-         // Sort by Pattern name (alphabetical)
         return list.sort((a, b) => {
-            const styleA = (a.item.data as CoinData).pattern || '';
-            const styleB = (b.item.data as CoinData).pattern || '';
+            const styleA = (a.item.data as CoinData).pattern || (a.item.data as ItemData).name || '';
+            const styleB = (b.item.data as CoinData).pattern || (b.item.data as ItemData).name || '';
             return styleA.localeCompare(styleB);
         });
       default:
         return list;
     }
-  }, [items, sort]);
+  }, [displayedItems, sort]);
 
-  // Selection Logic
-  const toggleSelection = (index: number) => {
-    if (currentMode === 'VIEW') return;
-    const newSet = new Set(selectedIndices);
-    if (newSet.has(index)) {
-        newSet.delete(index);
-    } else {
-        newSet.add(index);
+  // Selection Logic (Multi-select for Sell/Revive, Single select for Use)
+  const handleItemClick = (index: number) => {
+    // If selling or reviving, use multi-select
+    if (currentMode === 'SELL' || currentMode === 'REVIVE') {
+        const newSet = new Set(selectedIndices);
+        if (newSet.has(index)) {
+            newSet.delete(index);
+        } else {
+            newSet.add(index);
+        }
+        setSelectedIndices(newSet);
+    } 
+    // If viewing (Collection/Tools/Pantry), use single select for details/usage
+    else {
+        setActiveItemIndex(index === activeItemIndex ? null : index);
     }
-    setSelectedIndices(newSet);
   };
 
   // Selection Stats
   const selectedValue = Array.from(selectedIndices).reduce<number>((acc, idx) => {
-      const item = items[idx as number];
+      // Find item in main list based on index provided by sorted list logic? 
+      // Simplified: We assume indexes passed here map to displayedItems
+      const item = displayedItems[idx];
       return acc + (item ? item.monetaryValue : 0);
   }, 0);
 
@@ -103,15 +135,11 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
   const isSell = currentMode === 'SELL';
   const REVIVE_COST = 1000;
   
-  // Revive Logic
   const canAffordCash = balance >= REVIVE_COST;
   const isBankrupt = !canAffordCash && (balance + totalValue < REVIVE_COST);
-  const reviveTarget = canAffordCash ? 0 : REVIVE_COST - balance; // How much we need to sell
+  const reviveTarget = canAffordCash ? 0 : REVIVE_COST - balance; 
   
-  // If we can afford cash, we don't need to select items
-  // If we can't afford cash, we need to select items >= reviveTarget
   const canRevive = isRevive && (canAffordCash || (selectedValue >= reviveTarget || (isBankrupt && Math.abs(selectedValue - totalValue) < 1)));
-  
   const canSell = isSell && selectedIndices.size > 0;
 
   const handleAction = () => {
@@ -119,19 +147,19 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
           if (canAffordCash && onPayRevive) {
               onPayRevive();
           } else if (onRevive) {
-              const selection = items.filter((_, idx) => selectedIndices.has(idx));
+              const selection = displayedItems.filter((_, idx) => selectedIndices.has(idx));
               onRevive(selection);
           }
       }
       if (isSell && onSell) {
-          const selection = items.filter((_, idx) => selectedIndices.has(idx));
+          const selection = displayedItems.filter((_, idx) => selectedIndices.has(idx));
           onSell(selection);
           setSelectedIndices(new Set());
           setInternalMode('VIEW');
       }
   };
 
-  // Helper to determine size class for rendering (keeps the grid looking organic)
+  // Helper to determine size class for rendering
   const getSizeClass = (artifact: Artifact) => {
       if (artifact.type === ArtifactType.COIN) {
           const size = (artifact.data as CoinData).size;
@@ -142,7 +170,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
               case CoinSize.Tiny: return 'w-[40%]';
           }
       }
-      return 'w-[60%]'; // Default for future types
+      return 'w-[60%]'; 
   };
 
   // Helper to extract display details safely
@@ -154,7 +182,22 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
               subtitle: `${d.year > 0 ? `${d.year} AD` : `${Math.abs(d.year)} BC`} • ${d.condition}`
           };
       }
-      return { title: 'Unknown', subtitle: '???' };
+      const d = artifact.data as ItemData;
+      return { title: d.name, subtitle: d.description };
+  };
+
+  // Spoilage Formatter
+  const getSpoilageTime = (item: Artifact) => {
+      const data = item.data as ItemData;
+      if (!data.spoilageTimestamp) return null;
+      const msLeft = data.spoilageTimestamp - Date.now();
+      
+      if (msLeft <= 0) return "Spoiled";
+      
+      const hours = Math.floor(msLeft / (1000 * 60 * 60));
+      if (hours > 24) return `${Math.floor(hours / 24)} Days`;
+      if (hours > 0) return `${hours} Hours`;
+      return `${Math.floor(msLeft / (1000 * 60))} Mins`;
   };
 
   return (
@@ -171,48 +214,18 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
               {/* Toggles */}
               <div className="flex items-center justify-between">
                   <span className="text-zinc-400 text-xs">Disable Wait Timer</span>
-                  <button 
-                    onClick={onToggleDevInstantScan}
-                    className={`w-10 h-5 rounded-full relative transition-colors ${devInstantScan ? 'bg-green-500' : 'bg-zinc-700'}`}
-                  >
+                  <button onClick={onToggleDevInstantScan} className={`w-10 h-5 rounded-full relative transition-colors ${devInstantScan ? 'bg-green-500' : 'bg-zinc-700'}`}>
                       <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${devInstantScan ? 'left-6' : 'left-1'}`}></div>
                   </button>
               </div>
 
-              {/* Manual Movement Toggle */}
               <div className="flex items-center justify-between">
-                  <span className="text-zinc-400 text-xs flex items-center gap-2"><Move size={12}/> Manual Movement (Keys)</span>
-                  <button 
-                    onClick={onToggleManualMovement}
-                    className={`w-10 h-5 rounded-full relative transition-colors ${manualMode ? 'bg-blue-500' : 'bg-zinc-700'}`}
-                  >
+                  <span className="text-zinc-400 text-xs flex items-center gap-2"><Move size={12}/> Manual Movement</span>
+                  <button onClick={onToggleManualMovement} className={`w-10 h-5 rounded-full relative transition-colors ${manualMode ? 'bg-blue-500' : 'bg-zinc-700'}`}>
                       <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${manualMode ? 'left-6' : 'left-1'}`}></div>
                   </button>
               </div>
 
-              {/* Metal Detector Toggle */}
-              <div className="flex items-center justify-between">
-                  <span className="text-zinc-400 text-xs flex items-center gap-2"><ScanLine size={12}/> Metal Detector</span>
-                  <button 
-                    onClick={onToggleDetector}
-                    className={`w-10 h-5 rounded-full relative transition-colors ${isDetectorActive ? 'bg-green-500' : 'bg-zinc-700'}`}
-                  >
-                      <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${isDetectorActive ? 'left-6' : 'left-1'}`}></div>
-                  </button>
-              </div>
-
-              {/* Sonar Toggle */}
-              <div className="flex items-center justify-between">
-                  <span className="text-zinc-400 text-xs flex items-center gap-2"><Radar size={12}/> Sonar</span>
-                  <button 
-                    onClick={onToggleSonar}
-                    className={`w-10 h-5 rounded-full relative transition-colors ${isSonarActive ? 'bg-indigo-500' : 'bg-zinc-700'}`}
-                  >
-                      <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${isSonarActive ? 'left-6' : 'left-1'}`}></div>
-                  </button>
-              </div>
-
-              {/* Actions */}
               <button onClick={onDevAddCash} className="w-full bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold py-3 rounded uppercase border border-zinc-600">
                   Add $10,000 Cash
               </button>
@@ -226,20 +239,46 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
       )}
 
       {/* Header */}
-      <div className="bg-black border-b border-zinc-900 p-4 space-y-4">
+      <div className="bg-black border-b border-zinc-900 p-4 space-y-4 relative z-40">
         <div className="flex justify-between items-center">
-            <h2 className={`font-bold tracking-widest text-sm uppercase flex items-center gap-2 ${isRevive ? 'text-red-500' : 'text-white'}`}>
-                {isRevive ? 'Medical Bill' : 'Collection'}
-            </h2>
+            
+            {/* DROPDOWN TITLE */}
+            <div className="relative">
+                <button 
+                    onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                    className={`font-bold tracking-widest text-sm uppercase flex items-center gap-2 ${isRevive ? 'text-red-500' : 'text-white'} hover:opacity-80`}
+                >
+                    {isRevive ? 'Medical Bill' : currentTab}
+                    <ChevronDown size={14} className={`transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} />
+                </button>
+
+                {isDropdownOpen && !isRevive && (
+                    <div className="absolute top-full left-0 mt-2 w-48 bg-zinc-900 border border-zinc-800 rounded shadow-xl overflow-hidden flex flex-col">
+                        {(['COLLECTION', 'TOOLS', 'PANTRY', 'BOUTIQUE'] as Tab[]).map(tab => (
+                            <button
+                                key={tab}
+                                onClick={() => { setCurrentTab(tab); setIsDropdownOpen(false); setActiveItemIndex(null); }}
+                                className={`text-left px-4 py-3 text-xs font-bold tracking-wider hover:bg-zinc-800 ${currentTab === tab ? 'text-white bg-zinc-800' : 'text-zinc-500'}`}
+                            >
+                                {tab}
+                            </button>
+                        ))}
+                    </div>
+                )}
+            </div>
+            
             <div className="flex gap-4">
                 {mode === 'VIEW' && currentMode === 'VIEW' && (
                     <>
                         <button onClick={() => setShowDev(!showDev)} className="text-zinc-500 hover:text-white transition-colors text-xs font-bold border border-zinc-800 hover:border-zinc-600 px-2 py-1 rounded">
                             DEV
                         </button>
-                        <button onClick={() => setInternalMode('SELL')} className="text-zinc-400 hover:text-white transition-colors text-xs font-bold border border-zinc-800 px-2 py-1 rounded">
-                            MANAGE ASSETS
-                        </button>
+                        {/* Only allow Manage Assets (Sell) on Collection */}
+                        {currentTab === 'COLLECTION' && (
+                             <button onClick={() => setInternalMode('SELL')} className="text-zinc-400 hover:text-white transition-colors text-xs font-bold border border-zinc-800 px-2 py-1 rounded">
+                                MANAGE ASSETS
+                            </button>
+                        )}
                     </>
                 )}
                 {mode === 'VIEW' && currentMode === 'SELL' && (
@@ -258,16 +297,15 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
         {isRevive && !canAffordCash && (
              <div className="text-xs text-zinc-400 font-mono mb-2">
                 Operator Exhausted. Sell <span className="text-white">${reviveTarget.toLocaleString()}</span> to pay medical bill.
-                {isBankrupt && <div className="text-red-500 mt-1">INSUFFICIENT FUNDS: TOTAL LIQUIDATION REQUIRED.</div>}
             </div>
         )}
 
         {/* Stats Bar (Hidden in Revive Mode if we are paying cash) */}
-        {!(isRevive && canAffordCash) && (
+        {!(isRevive && canAffordCash) && currentTab === 'COLLECTION' && (
             <div className="grid grid-cols-3 gap-2">
                 <div className="bg-zinc-900/50 p-2 rounded border border-zinc-800 flex flex-col items-center">
                     <span className="text-[10px] text-zinc-500 uppercase flex items-center gap-1">Count</span>
-                    <span className="text-white font-mono text-sm">{items.length}</span>
+                    <span className="text-white font-mono text-sm">{collectionItems.length}</span>
                 </div>
                 <div className="bg-zinc-900/50 p-2 rounded border border-zinc-800 flex flex-col items-center">
                     <span className="text-[10px] text-zinc-500 uppercase flex items-center gap-1">Value</span>
@@ -280,8 +318,8 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
             </div>
         )}
 
-        {/* Sort Tabs */}
-        {!(isRevive && canAffordCash) && (
+        {/* Sort Tabs - Only for Collection */}
+        {!(isRevive && canAffordCash) && currentTab === 'COLLECTION' && (
             <div className="flex gap-2 text-[10px] overflow-x-auto no-scrollbar">
                 {(['RECENT', 'AGE', 'RARITY', 'STYLE'] as SortOption[]).map((opt) => (
                     <button 
@@ -301,7 +339,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
       </div>
 
       {/* Grid Content OR Pay Bill Overlay */}
-      <div className="flex-1 overflow-y-auto p-4 bg-black pb-32 relative">
+      <div className="flex-1 overflow-y-auto p-4 bg-black pb-32 relative" onClick={() => setIsDropdownOpen(false)}>
         
         {/* Simple Pay Overlay */}
         {isRevive && canAffordCash ? (
@@ -323,24 +361,30 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
             // Standard Grid
             sortedItems.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-zinc-700 space-y-2 opacity-50">
-                <div className="text-xs font-mono tracking-widest">NO DATA</div>
+                <div className="text-xs font-mono tracking-widest uppercase">
+                    {currentTab === 'BOUTIQUE' ? 'No Items Unlocked' : 'Empty'}
+                </div>
             </div>
             ) : (
             <div className="grid grid-cols-3 gap-3">
                 {sortedItems.map(({ item, originalIndex }, idx) => {
                 const isSelected = selectedIndices.has(originalIndex);
+                const isActive = activeItemIndex === originalIndex;
                 const details = getArtifactDetails(item);
+                const spoilage = item.type === ArtifactType.FOOD ? getSpoilageTime(item) : null;
+                const isBoutique = currentTab === 'BOUTIQUE';
                 
                 return (
                     <button 
-                        key={item.id} // Use stable ID
-                        onClick={() => toggleSelection(originalIndex)}
-                        disabled={currentMode === 'VIEW'}
-                        className={`flex flex-col gap-2 group relative text-left ${currentMode === 'VIEW' ? 'cursor-default' : 'cursor-pointer'}`}
+                        key={item.id} 
+                        onClick={() => handleItemClick(originalIndex)}
+                        // Disable clicking for Sell/Revive if not in collection (though they are filtered out anyway)
+                        disabled={currentMode === 'VIEW' ? false : currentTab !== 'COLLECTION'}
+                        className={`flex flex-col gap-2 group relative text-left ${currentMode === 'VIEW' ? 'cursor-pointer' : 'cursor-pointer'}`}
                     >
                         {/* Thumbnail */}
                         <div className={`aspect-square bg-zinc-900 rounded-lg border relative overflow-hidden flex items-center justify-center transition-all ${
-                            isSelected 
+                            (isSelected || isActive)
                                 ? 'border-white border-4 bg-zinc-800' 
                                 : 'border-zinc-800 group-hover:border-zinc-600'
                         }`}>
@@ -353,23 +397,36 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                                 </div>
                             )}
 
-                            {/* Artifact Render using Switchboard */}
+                            {/* Artifact Render */}
                             <div className={`aspect-square flex items-center justify-center pointer-events-none transition-opacity ${isSelected ? 'opacity-60' : 'opacity-100'} ${getSizeClass(item)}`}>
                                 <ArtifactRenderer artifact={item} className="w-full h-full" />
                             </div>
 
-                            {/* Rarity Badge */}
-                            <div className="absolute top-1 right-1 px-1 bg-black/80 border border-zinc-800 rounded text-[9px] text-yellow-500 font-mono backdrop-blur-sm">
-                                {item.rarityScore.toFixed(1)}
-                            </div>
+                            {/* Rarity/Cost Badge */}
+                            {item.type === ArtifactType.COIN ? (
+                                <div className="absolute top-1 right-1 px-1 bg-black/80 border border-zinc-800 rounded text-[9px] text-yellow-500 font-mono backdrop-blur-sm">
+                                    {item.rarityScore.toFixed(1)}
+                                </div>
+                            ) : isBoutique ? (
+                                <div className="absolute top-1 right-1 px-1 bg-black/80 border border-zinc-800 rounded text-[9px] text-green-400 font-mono backdrop-blur-sm">
+                                    ${item.monetaryValue}
+                                </div>
+                            ) : null}
+                            
+                            {/* Spoilage Warning */}
+                            {spoilage && (
+                                <div className="absolute bottom-1 left-1 right-1 bg-red-900/80 text-[8px] text-white text-center rounded px-1">
+                                    {spoilage}
+                                </div>
+                            )}
                         </div>
                         {/* Details */}
                         <div className="px-1">
                             <div className="flex justify-between items-baseline">
                                 <span className="text-[10px] text-white font-bold truncate">{details.title}</span>
-                                <span className="text-[10px] text-white font-mono">${item.monetaryValue.toLocaleString()}</span>
+                                {item.type === ArtifactType.COIN && <span className="text-[10px] text-white font-mono">${item.monetaryValue.toLocaleString()}</span>}
                             </div>
-                            <div className="text-[8px] text-white truncate">
+                            <div className="text-[8px] text-zinc-500 truncate">
                                 {details.subtitle}
                             </div>
                         </div>
@@ -384,7 +441,6 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
       {/* Footer Action */}
       {(isRevive || isSell) && (
           <div className="absolute bottom-0 left-0 w-full bg-zinc-900 border-t border-zinc-800 p-4 pb-8 shadow-xl z-50">
-              {/* Only show selection stats if we are NOT paying direct cash */}
               {!(isRevive && canAffordCash) && (
                   <div className="flex justify-between text-xs font-mono mb-2">
                     <span className="text-zinc-400">Selected:</span>
@@ -410,6 +466,47 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
               </button>
           </div>
       )}
+
+      {/* Use / Buy Footer */}
+      {!isRevive && !isSell && activeItemIndex !== null && (
+         <div className="absolute bottom-0 left-0 w-full bg-zinc-900 border-t border-zinc-800 p-4 pb-8 shadow-xl z-50 animate-in slide-in-from-bottom duration-200">
+             {(() => {
+                 const item = displayedItems[activeItemIndex];
+                 if (!item) return null;
+                 const isFood = item.type === ArtifactType.FOOD;
+                 const isTool = item.type === ArtifactType.TOOL;
+                 const isBoutique = currentTab === 'BOUTIQUE';
+
+                 if (isBoutique) {
+                     return (
+                        <button
+                            onClick={() => { onBuyBoutiqueItem(item); setActiveItemIndex(null); }}
+                            disabled={balance < item.monetaryValue}
+                            className={`w-full h-12 rounded font-bold tracking-widest uppercase transition-all flex items-center justify-center gap-2 ${
+                                balance >= item.monetaryValue ? 'bg-white text-black hover:bg-zinc-200' : 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
+                            }`}
+                        >
+                            <ShoppingBag size={16} /> BUY (${item.monetaryValue})
+                        </button>
+                     )
+                 }
+
+                 if (isFood || isTool) {
+                     return (
+                        <button
+                            onClick={() => { onUseItem(item); setActiveItemIndex(null); }}
+                            className="w-full h-12 rounded font-bold tracking-widest uppercase transition-all bg-white text-black hover:bg-zinc-200 flex items-center justify-center gap-2"
+                        >
+                            {isFood ? 'Eat' : 'Use'}
+                        </button>
+                     )
+                 }
+
+                 return null;
+             })()}
+         </div>
+      )}
+
     </div>
   );
 };

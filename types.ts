@@ -4,6 +4,8 @@
 
 export enum ArtifactType {
   COIN = 'COIN',
+  FOOD = 'FOOD',
+  TOOL = 'TOOL',
   // Future types:
   // MOSAIC = 'MOSAIC',
   // SPOON = 'SPOON',
@@ -118,6 +120,17 @@ export interface CoinData {
   visualOverrides?: CoinVisualOverrides; // Stored DNA from procedural generation
 }
 
+// Data for Consumables/Tools
+export interface ItemData {
+    name: string;
+    description: string;
+    effectValue: number; // HP amount or Duration in ms
+    effectType: 'HEAL' | 'RANGE_BOOST' | 'SONAR_BOOST' | 'IMMUNITY';
+    shelfLifeMs?: number; // For food in shops
+    spoilageTimestamp?: number; // Calculated when bought
+    icon?: string; // Icon identifier
+}
+
 // --- DESIGN PROFILE (The Input/Constraints) ---
 
 export interface Range {
@@ -163,10 +176,10 @@ export interface Artifact {
   
   // Pre-calculated stats for sorting/inventory
   rarityScore: number;     // 0.0 - 10.0
-  monetaryValue: number;   // $ Value
+  monetaryValue: number;   // $ Value (or Cost)
   
   // The specific DNA of the object
-  data: CoinData; // | MosaicData | SpoonData  <-- Future unions go here
+  data: CoinData | ItemData; 
 }
 
 // --- 3. CONFIG & WEIGHTS ---
