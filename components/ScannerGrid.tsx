@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { CellType, getCellType } from '../utils/gameLogic';
-import { Skull, ShoppingCart, Wrench, Apple } from 'lucide-react';
+import { Skull, ShoppingCart, Wrench, Cherry } from 'lucide-react';
 import L from 'leaflet';
 
 interface ScannerGridProps {
@@ -194,7 +194,7 @@ export const ScannerGrid: React.FC<ScannerGridProps> = ({ isHostile, playerPos, 
           return (
             <foreignObject x="-12" y="-12" width="24" height="24" className={cls}>
                  <div className="flex items-center justify-center w-full h-full">
-                    <Apple size={18} color={color} />
+                    <Cherry size={20} color={color} />
                  </div>
             </foreignObject>
           );

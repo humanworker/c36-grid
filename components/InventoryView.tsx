@@ -2,7 +2,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { Artifact, ArtifactType, CoinData, CoinSize, ItemData } from '../types';
 import { ArtifactRenderer } from './ArtifactRenderer';
-import { X, Check, Palette, Move, Activity, ScanLine, Radar, ChevronDown, ShoppingBag } from 'lucide-react';
+import { X, Check, Palette, Move, Activity, ScanLine, Radar, ChevronDown, ShoppingBag, Info, Circle, Cherry, Skull, ShoppingCart, Wrench } from 'lucide-react';
 
 interface InventoryViewProps {
   items: Artifact[];
@@ -37,7 +37,30 @@ interface InventoryViewProps {
 }
 
 type SortOption = 'RECENT' | 'AGE' | 'RARITY' | 'STYLE'; 
-type Tab = 'COLLECTION' | 'TOOLS' | 'PANTRY' | 'BOUTIQUE';
+type Tab = 'COLLECTION' | 'TOOLS' | 'PANTRY' | 'BOUTIQUE' | 'GUIDE';
+
+// --- GUIDE CONFIGURATION ---
+const ODDS_GUIDE = [
+    { type: 'Empty Area', chance: '69%', icon: <X size={14}/>, color: 'text-zinc-500' },
+    { type: 'Coin', chance: '10%', icon: <Circle size={14}/>, color: 'text-yellow-500' },
+    { type: 'Fruit', chance: '10%', icon: <Cherry size={14}/>, color: 'text-green-500' },
+    { type: 'Hostile', chance: '10%', icon: <Skull size={14}/>, color: 'text-red-500' },
+    { type: 'Supermarket', chance: '0.5%', icon: <ShoppingCart size={14}/>, color: 'text-blue-400' },
+    { type: 'Tool Shop', chance: '0.5%', icon: <Wrench size={14}/>, color: 'text-blue-400' },
+];
+
+const RARITY_GUIDE = [
+    { metal: 'Platinum', score: '10.0', rarity: 'Very High' },
+    { metal: 'Gold', score: '9.5', rarity: 'High' },
+    { metal: 'Silver', score: '8.0', rarity: 'High' },
+    { metal: 'Bronze', score: '6.5', rarity: 'Medium' },
+    { metal: 'Aluminium', score: '5.0', rarity: 'Medium' },
+    { metal: 'Brass', score: '4.0', rarity: 'Medium' },
+    { metal: 'Zinc', score: '3.0', rarity: 'Low' },
+    { metal: 'Nickel', score: '2.0', rarity: 'Low' },
+    { metal: 'Copper', score: '1.0', rarity: 'Common' },
+];
+
 
 export const InventoryView: React.FC<InventoryViewProps> = ({ 
   items, boutiqueItems, onClose, mode = 'VIEW', onRevive, onPayRevive, onSell, balance,
@@ -65,6 +88,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
   // --- FILTER ITEMS BASED ON TAB ---
   const displayedItems = useMemo(() => {
       if (currentTab === 'BOUTIQUE') return boutiqueItems;
+      if (currentTab === 'GUIDE') return [];
       
       return items.filter(item => {
           if (currentTab === 'COLLECTION') return item.type === ArtifactType.COIN;
@@ -265,7 +289,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
 
                 {isDropdownOpen && !isRevive && (
                     <div className="absolute top-full left-0 mt-2 w-48 bg-zinc-900 border border-zinc-800 rounded shadow-xl overflow-hidden flex flex-col">
-                        {(['COLLECTION', 'TOOLS', 'PANTRY', 'BOUTIQUE'] as Tab[]).map(tab => (
+                        {(['COLLECTION', 'TOOLS', 'PANTRY', 'BOUTIQUE', 'GUIDE'] as Tab[]).map(tab => (
                             <button
                                 key={tab}
                                 onClick={() => { setCurrentTab(tab); setIsDropdownOpen(false); setActiveItemIndex(null); }}
@@ -311,7 +335,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
             </div>
         )}
 
-        {/* Stats Bar (Hidden in Revive Mode if we are paying cash) */}
+        {/* Stats Bar (Hidden in Revive Mode if we are paying cash or in Guide) */}
         {!(isRevive && canAffordCash) && currentTab === 'COLLECTION' && (
             <div className="grid grid-cols-3 gap-2">
                 <div className="bg-zinc-900/50 p-2 rounded border border-zinc-800 flex flex-col items-center">
@@ -368,6 +392,45 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                      Cost: ${REVIVE_COST.toLocaleString()}
                  </div>
              </div>
+        ) : currentTab === 'GUIDE' ? (
+            // --- GUIDE VIEW ---
+            <div className="space-y-8 animate-in fade-in duration-300">
+                <div className="space-y-4">
+                    <div className="flex items-center gap-2 text-white border-b border-zinc-800 pb-2">
+                        <Radar size={16} className="text-blue-500" />
+                        <h3 className="text-sm font-bold uppercase tracking-widest">Scanner Probabilities</h3>
+                    </div>
+                    <div className="grid gap-2">
+                        {ODDS_GUIDE.map((item, i) => (
+                            <div key={i} className="flex items-center justify-between bg-zinc-900/30 p-3 rounded border border-zinc-800">
+                                <div className="flex items-center gap-3">
+                                    <div className={item.color}>{item.icon}</div>
+                                    <span className="text-zinc-300 text-xs font-mono">{item.type}</span>
+                                </div>
+                                <span className="text-white font-bold text-xs">{item.chance}</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="space-y-4">
+                    <div className="flex items-center gap-2 text-white border-b border-zinc-800 pb-2">
+                        <Circle size={16} className="text-yellow-500" />
+                        <h3 className="text-sm font-bold uppercase tracking-widest">Coin Value (Metal)</h3>
+                    </div>
+                     <div className="grid gap-2">
+                        {RARITY_GUIDE.map((item, i) => (
+                            <div key={i} className="flex items-center justify-between bg-zinc-900/30 p-3 rounded border border-zinc-800">
+                                <div className="flex flex-col">
+                                    <span className="text-zinc-300 text-xs font-bold">{item.metal}</span>
+                                    <span className="text-zinc-600 text-[10px] uppercase tracking-wide">{item.rarity} Rarity</span>
+                                </div>
+                                <span className="text-white font-mono text-xs">{item.score}</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
         ) : (
             // Standard Grid
             sortedItems.length === 0 ? (
