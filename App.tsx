@@ -151,7 +151,7 @@ export default function App() {
                       (position, err) => {
                           if (err) {
                               console.error("GPS Error", err);
-                              addLog("ERR: GPS Signal Lost.");
+                              addLog(`ERR: Signal Lost (${err.message})`);
                               return;
                           }
 
@@ -175,7 +175,7 @@ export default function App() {
               }
           } catch (e) {
               console.error("GPS Init Failed", e);
-              addLog("ERR: GPS Initialization Failed.");
+              addLog(`ERR: GPS Init Failed: ${e instanceof Error ? e.message : String(e)}`);
           }
       };
 
