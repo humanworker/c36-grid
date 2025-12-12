@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Artifact, ArtifactType, CoinData, ItemData } from '../types';
 import { CoinRender } from './CoinRender';
@@ -30,11 +31,24 @@ export const ArtifactRenderer: React.FC<ArtifactRendererProps> = ({ artifact, cl
     }
 
     case ArtifactType.FOOD:
+        const data = artifact.data as ItemData;
         return (
             <div className={`${className} bg-green-900/20 flex flex-col items-center justify-center p-2 rounded border border-green-900/50`}>
                 <div className="bg-green-500 p-3 rounded-full mb-1">
-                   {/* Differentiate map food (Apple) vs Pantry items (Package/Can) */}
-                   {(artifact.data as ItemData).name === 'Fruit' ? <Apple size={24} className="text-white"/> : <Package size={24} className="text-white"/>}
+                   {/* Differentiate map food (Apple), Sandwich, vs Pantry items (Package/Can) */}
+                   {data.name === 'Fruit' ? <Apple size={24} className="text-white"/> : 
+                    data.icon === 'SANDWICH' ? (
+                        // Custom Sandwich SVG
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white">
+                            <path d="M3 13l2-9 16 3-2 9" />
+                            <path d="M5 16l1-2" />
+                            <path d="M19 19l-1-2" />
+                            <rect x="3" y="16" width="18" height="4" rx="1" />
+                        </svg>
+                    ) : (
+                        <Package size={24} className="text-white"/>
+                    )
+                   }
                 </div>
             </div>
         );

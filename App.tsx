@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Artifact, CoinData, ArtifactType, ItemData } from './types'; 
 import { generateArtifact, getCellType, CellType, XP_VALUES, SUPERMARKET_CATALOG, TOOLSHOP_CATALOG, generateShopArtifact } from './utils/gameLogic';
@@ -135,41 +136,17 @@ export default function App() {
   // Delta clear effects
   useEffect(() => {
     if (hpDelta !== null) {
-        const t = setTimeout(() => setHpDelta(null), 2000); 
+        const t = setTimeout(() => setHpDelta(null), 500); 
         return () => clearTimeout(t);
     }
   }, [hpDelta]);
 
   useEffect(() => {
     if (xpDelta !== null) {
-        const t = setTimeout(() => setXpDelta(null), 2000); 
+        const t = setTimeout(() => setXpDelta(null), 500); 
         return () => clearTimeout(t);
     }
   }, [xpDelta]);
-
-  // Spoilage Checker Loop
-  useEffect(() => {
-    const checkSpoilage = setInterval(() => {
-        setInventory(prev => {
-            let hasChanges = false;
-            const nowTime = Date.now();
-            const next = prev.filter(item => {
-                if (item.type === ArtifactType.FOOD) {
-                    const d = item.data as ItemData;
-                    if (d.spoilageTimestamp && nowTime > d.spoilageTimestamp) {
-                        addLog(`Pantry Alert: ${d.name} has spoiled.`);
-                        hasChanges = true;
-                        return false; // Remove
-                    }
-                }
-                return true;
-            });
-            return hasChanges ? next : prev;
-        });
-    }, 60000); // Check every minute
-    return () => clearInterval(checkSpoilage);
-  }, [addLog]);
-
 
   // --- 3. MOVEMENT ENGINE (GPS + MANUAL) ---
   
@@ -362,10 +339,12 @@ export default function App() {
       return () => clearInterval(metabolicInterval);
   }, [view, hp]);
 
-  // Global Timer (Exhaustion Check)
+  // Global Timer (Exhaustion & Spoilage Check)
   useEffect(() => {
     const timer = setInterval(() => {
         setNow(Date.now());
+        
+        // Exhaustion Check
         setHp(h => {
              if (h <= 0 && view !== 'EXHAUSTION' && view !== 'START') {
                 setView('EXHAUSTION');
@@ -373,6 +352,53 @@ export default function App() {
              }
              return h;
         });
+
+        // Inventory Spoilage Check (Decrement Game-Time Life)
+        setInventory(currentInventory => {
+             const nextInventory: Artifact[] = [];
+             const spoiledNames: string[] = [];
+             let hasChanges = false;
+
+             for (const item of currentInventory) {
+                 if (item.type === ArtifactType.FOOD && (item.data as ItemData).remainingLifeMs !== undefined) {
+                     const currentLife = (item.data as ItemData).remainingLifeMs!;
+                     const newLife = currentLife - 1000;
+                     
+                     if (newLife <= 0) {
+                         spoiledNames.push((item.data as ItemData).name);
+                         hasChanges = true;
+                     } else {
+                         // Only mark as change if we are updating life
+                         // React optimization: Does map always create new object ref? Yes. 
+                         // But we want to avoid re-rendering InventoryView if data hasn't structurally changed significantly?
+                         // Actually InventoryView will re-render anyway.
+                         nextInventory.push({ 
+                             ...item, 
+                             data: { ...item.data as ItemData, remainingLifeMs: newLife } 
+                         });
+                         // We track changes implicitly by the fact we are in this loop
+                         // However, to avoid replacing state if NO food exists, we can optimize.
+                     }
+                 } else {
+                     nextInventory.push(item);
+                 }
+             }
+
+             if (spoiledNames.length > 0) {
+                 // Hack to log without side-effecting inside reducer
+                 setTimeout(() => {
+                     spoiledNames.forEach(n => addLog(`Pantry Alert: ${n} spoiled.`));
+                 }, 0);
+                 return nextInventory;
+             }
+
+             // If we had food items, we updated them. If not, return prev.
+             // Simple check: did we rebuild the array to be different length? Or changed data?
+             // If we had any food with remainingLifeMs, we changed data.
+             const hadFood = currentInventory.some(i => i.type === ArtifactType.FOOD && (i.data as ItemData).remainingLifeMs !== undefined);
+             return hadFood ? nextInventory : currentInventory;
+        });
+
     }, 1000);
     return () => clearInterval(timer);
   }, [view, addLog]);
@@ -658,9 +684,9 @@ export default function App() {
       // Generate the item artifact
       const artifact = generateShopArtifact(def);
       
-      // Set spoilage if it's food
+      // Set shelf life (gameplay time)
       if (def.shelfLifeMs) {
-          (artifact.data as ItemData).spoilageTimestamp = Date.now() + def.shelfLifeMs;
+          (artifact.data as ItemData).remainingLifeMs = def.shelfLifeMs;
       }
       
       setInventory(prev => [artifact, ...prev]);

@@ -1,3 +1,4 @@
+
 import { 
     CoinData, CoinMetal, CoinCondition, CoinBorder, CoinSize, CoinPattern, 
     Artifact, ArtifactType, DesignProfile, Range, ItemData,
@@ -27,9 +28,22 @@ export interface ShopItemDef {
     effectType: 'HEAL' | 'RANGE_BOOST' | 'SONAR_BOOST' | 'IMMUNITY';
     effectValue: number;
     shelfLifeMs?: number; // Only for food
+    icon?: string;
 }
 
 export const SUPERMARKET_CATALOG: ShopItemDef[] = [
+    {
+        id: 'food-sandwich-1',
+        type: ArtifactType.FOOD,
+        name: 'Sandwich',
+        description: 'Fresh. Spoils in 1 hour (game-time).',
+        cost: 200,
+        levelReq: 1,
+        effectType: 'HEAL',
+        effectValue: 20,
+        shelfLifeMs: 60 * 60 * 1000, // 1 Hour
+        icon: 'SANDWICH'
+    },
     {
         id: 'food-ration-1',
         type: ArtifactType.FOOD,
@@ -278,6 +292,7 @@ export const generateShopArtifact = (def: ShopItemDef): Artifact => {
         effectValue: def.effectValue,
         effectType: def.effectType,
         shelfLifeMs: def.shelfLifeMs,
+        icon: def.icon,
         // Spoilage is set when purchased
     };
     

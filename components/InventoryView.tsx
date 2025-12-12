@@ -1,3 +1,4 @@
+
 import React, { useMemo, useState, useEffect } from 'react';
 import { Artifact, ArtifactType, CoinData, CoinSize, ItemData } from '../types';
 import { ArtifactRenderer } from './ArtifactRenderer';
@@ -189,15 +190,25 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
   // Spoilage Formatter
   const getSpoilageTime = (item: Artifact) => {
       const data = item.data as ItemData;
-      if (!data.spoilageTimestamp) return null;
-      const msLeft = data.spoilageTimestamp - Date.now();
-      
-      if (msLeft <= 0) return "Spoiled";
-      
-      const hours = Math.floor(msLeft / (1000 * 60 * 60));
-      if (hours > 24) return `${Math.floor(hours / 24)} Days`;
-      if (hours > 0) return `${hours} Hours`;
-      return `${Math.floor(msLeft / (1000 * 60))} Mins`;
+      // Gameplay time priority
+      if (data.remainingLifeMs !== undefined) {
+          const msLeft = data.remainingLifeMs;
+          if (msLeft <= 0) return "Spoiled";
+          const hours = Math.floor(msLeft / (1000 * 60 * 60));
+          if (hours >= 24) return `${Math.floor(hours / 24)} Days`;
+          if (hours >= 1) return `${hours} Hours`;
+          return `${Math.floor(msLeft / (1000 * 60))} Mins`;
+      }
+      // Legacy Fallback
+      if (data.spoilageTimestamp) {
+          const msLeft = data.spoilageTimestamp - Date.now();
+          if (msLeft <= 0) return "Spoiled";
+          const hours = Math.floor(msLeft / (1000 * 60 * 60));
+          if (hours > 24) return `${Math.floor(hours / 24)} Days`;
+          if (hours > 0) return `${hours} Hours`;
+          return `${Math.floor(msLeft / (1000 * 60))} Mins`;
+      }
+      return null;
   };
 
   return (

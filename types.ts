@@ -1,3 +1,4 @@
+
 // Data structures defined in "The C-36 Grid: Design Specification v2.0"
 
 // --- 1. ENUMS ---
@@ -126,8 +127,9 @@ export interface ItemData {
     description: string;
     effectValue: number; // HP amount or Duration in ms
     effectType: 'HEAL' | 'RANGE_BOOST' | 'SONAR_BOOST' | 'IMMUNITY';
-    shelfLifeMs?: number; // For food in shops
-    spoilageTimestamp?: number; // Calculated when bought
+    shelfLifeMs?: number; // Original shelf life constant
+    remainingLifeMs?: number; // Countdown for gameplay-time spoilage
+    spoilageTimestamp?: number; // DEPRECATED: Old real-time spoilage
     icon?: string; // Icon identifier
 }
 
