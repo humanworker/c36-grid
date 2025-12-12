@@ -38,6 +38,10 @@ export default function App() {
   const [now, setNow] = useState(Date.now()); 
   const [greenFlash, setGreenFlash] = useState(false);
   
+  // Visual Feedback State (+x indicators)
+  const [hpDelta, setHpDelta] = useState<number | null>(null);
+  const [xpDelta, setXpDelta] = useState<number | null>(null);
+  
   // Developer Mode State
   const [devInstantScan, setDevInstantScan] = useState(false);
   const [manualMode, setManualMode] = useState(false);
@@ -128,6 +132,21 @@ export default function App() {
           xp
       });
   }, [hp, balance, inventory, visited, detectorExpiry, sonarExpiry, immunityExpiry, manualMode, view, xp]);
+
+  // Delta clear effects
+  useEffect(() => {
+    if (hpDelta !== null) {
+        const t = setTimeout(() => setHpDelta(null), 500); // 0.5s flash
+        return () => clearTimeout(t);
+    }
+  }, [hpDelta]);
+
+  useEffect(() => {
+    if (xpDelta !== null) {
+        const t = setTimeout(() => setXpDelta(null), 500); // 0.5s flash
+        return () => clearTimeout(t);
+    }
+  }, [xpDelta]);
 
 
   // --- 3. MOVEMENT ENGINE (GPS + MANUAL) ---
@@ -253,6 +272,7 @@ export default function App() {
         addLog(`Area Empty. +${XP_VALUES.SCAN_EMPTY} XP.`);
         setVisited(prev => ({ ...prev, [key]: 'EMPTY' }));
         setXp(p => p + XP_VALUES.SCAN_EMPTY);
+        setXpDelta(XP_VALUES.SCAN_EMPTY);
     }
 
     if (type === 'HOSTILE') {
@@ -271,16 +291,25 @@ export default function App() {
     if (type === 'FOOD' && !wasVisited) {
          const I5 = Math.abs(cell.x) % 10;
          const heal = (I5 * 2.5) + 10;
+         const healAmount = Math.floor(heal);
+         
          setHp(prev => Math.min(100, prev + heal));
          addLog(`Food Consumed. +${heal.toFixed(0)} HP / +${XP_VALUES.SCAN_FOOD} XP.`);
          setVisited(prev => ({...prev, [key]: 'FOOD'}));
          setXp(p => p + XP_VALUES.SCAN_FOOD);
          
+         // Visual Feedback
+         setHpDelta(healAmount);
+         setXpDelta(XP_VALUES.SCAN_FOOD);
+         
          // Trigger Flash
          setGreenFlash(true);
          if (flashTimeoutRef.current) clearTimeout(flashTimeoutRef.current);
          // Hold bright for 200ms, then let CSS transition take over to fade out
-         flashTimeoutRef.current = setTimeout(() => setGreenFlash(false), 200); 
+         flashTimeoutRef.current = setTimeout(() => setGreenFlash(false), 200);
+         
+         // Audio
+         playPositiveChime();
     }
   }, [cell, addLog, view]); 
 
@@ -357,6 +386,40 @@ export default function App() {
 
     osc.start();
     osc.stop(ctx.currentTime + 0.1);
+  };
+
+  const playPositiveChime = () => {
+    if (!audioCtxRef.current) {
+        audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+    }
+    const ctx = audioCtxRef.current;
+    if (ctx.state === 'suspended') ctx.resume();
+
+    const t = ctx.currentTime;
+    
+    // Create two oscillators for a harmony
+    const osc1 = ctx.createOscillator();
+    const osc2 = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc1.connect(gain);
+    osc2.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc1.type = 'sine';
+    osc2.type = 'sine';
+    
+    // C6 and E6 (Major Third)
+    osc1.frequency.setValueAtTime(1046.50, t); 
+    osc2.frequency.setValueAtTime(1318.51, t);
+
+    gain.gain.setValueAtTime(0.05, t); 
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+
+    osc1.start(t);
+    osc2.start(t);
+    osc1.stop(t + 0.5);
+    osc2.stop(t + 0.5);
   };
 
   // Continuous Drone for Hostile Cells
@@ -535,6 +598,7 @@ export default function App() {
         addLog(`Area Empty. +${XP_VALUES.SCAN_EMPTY} XP.`);
         setVisited(p => ({...p, [currentKey]: 'EMPTY'}));
         setXp(p => p + XP_VALUES.SCAN_EMPTY);
+        setXpDelta(XP_VALUES.SCAN_EMPTY);
     } else if (cellType === 'COIN') {
         const newArtifact = generateArtifact(cell.x, cell.y);
         setLastDiscoveredArtifact(newArtifact);
@@ -543,6 +607,7 @@ export default function App() {
         addLog(`Excavation Successful. +${XP_VALUES.SCAN_ITEM} XP.`);
         setVisited(p => ({...p, [currentKey]: 'COIN'}));
         setXp(p => p + XP_VALUES.SCAN_ITEM);
+        setXpDelta(XP_VALUES.SCAN_ITEM);
     }
   };
 
@@ -635,6 +700,10 @@ export default function App() {
                             style={{ width: `${hp}%` }}
                         ></div>
                     </div>
+                    {/* Visual Feedback Delta */}
+                    <span className={`transition-opacity duration-300 ${hpDelta ? 'opacity-100' : 'opacity-0'}`}>
+                        {hpDelta ? `+${hpDelta}` : ''}
+                    </span>
                 </div>
 
                 {/* LVL BAR ROW */}
@@ -646,6 +715,10 @@ export default function App() {
                             style={{ width: `${levelProgress}%` }}
                         ></div>
                     </div>
+                    {/* Visual Feedback Delta */}
+                    <span className={`transition-opacity duration-300 ${xpDelta ? 'opacity-100' : 'opacity-0'}`}>
+                        {xpDelta ? `+${xpDelta}` : ''}
+                    </span>
                 </div>
             </div>
 
@@ -662,8 +735,6 @@ export default function App() {
                         <span>IMMUNITY ACTIVE</span>
                     </div>
                  )}
-
-                 {/* Tools are now always active, hiding labels as requested */}
             </div>
       </div>
 
@@ -816,7 +887,8 @@ export default function App() {
                 {lastDiscoveredArtifact.type === ArtifactType.COIN && (
                      <div className="text-center space-y-2 mb-8">
                         <h2 className="text-2xl font-bold text-white">{(lastDiscoveredArtifact.data as CoinData).metal} Coin</h2>
-                        <p className="text-zinc-500 text-xs uppercase flex items-center justify-center gap-2">
+                        {/* UPDATED: Changed from text-zinc-500 to text-white for visibility */}
+                        <p className="text-white text-xs uppercase flex items-center justify-center gap-2">
                             {(lastDiscoveredArtifact.data as CoinData).condition} • {formatYear((lastDiscoveredArtifact.data as CoinData).year)} 
                             <span className="px-1.5 py-0.5 bg-black/80 border border-zinc-800 rounded text-[10px] text-yellow-500 font-mono">
                                 {lastDiscoveredArtifact.rarityScore.toFixed(1)}
