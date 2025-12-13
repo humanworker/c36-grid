@@ -15,7 +15,8 @@
 "leaflet": "^1.9.4",
 "@capacitor/core": "^6.0.0",
 "@capacitor/android": "^6.0.0",
-"@capacitor/geolocation": "^6.0.0"
+"@capacitor/geolocation": "^6.0.0",
+"@capacitor/haptics": "^6.0.0"
 },
 "devDependencies": {
 "@types/node": "^22.14.0",

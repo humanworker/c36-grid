@@ -15,6 +15,7 @@ import { loadGameState, saveGameState } from './utils/storage';
 
 // Capacitor Imports
 import { Geolocation } from '@capacitor/geolocation';
+import { Haptics } from '@capacitor/haptics';
 
 type ViewState = 'START' | 'SCANNER' | 'INVENTORY' | 'DISCOVERY' | 'EXHAUSTION' | 'SUPERMARKET' | 'TOOL_SHOP' | 'WORKBENCH';
 type VisitedMap = Record<string, CellType>;
@@ -555,6 +556,11 @@ export default function App() {
           
           if (minDistanceMeters <= MAX_RANGE) {
               playBeep();
+              // Trigger vibration alongside audio beep
+              Haptics.vibrate({ duration: 50 }).catch(() => {
+                  if (navigator.vibrate) navigator.vibrate(50);
+              });
+              
               const t = minDistanceMeters / MAX_RANGE; 
               const interval = 100 + (Math.pow(t, 2) * 1900);
               timeoutId = setTimeout(pingLoop, interval);
