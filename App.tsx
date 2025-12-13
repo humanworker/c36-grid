@@ -7,11 +7,11 @@ import { EventLog } from './components/EventLog';
 import { InventoryView } from './components/InventoryView';
 import { ArtifactRenderer } from './components/ArtifactRenderer'; 
 import { DesignWorkbench } from './components/DesignWorkbench'; 
-import { ShoppingBag, ScanLine, MapPin, Radar, ShieldAlert, ShoppingCart, Wrench } from 'lucide-react';
+import { ShoppingBag, ScanLine, MapPin, Radar, ShieldAlert, ShoppingCart, Wrench, Clock } from 'lucide-react';
 
 // New Imports for GPS and Storage
 import { latLonToMeters, getDistance } from './utils/geo';
-import { loadGameState, saveGameState } from './utils/storage';
+import { loadGameState, saveGameState, ShopState } from './utils/storage';
 
 // Capacitor Imports
 import { Geolocation } from '@capacitor/geolocation';
@@ -29,6 +29,7 @@ export default function App() {
   const [balance, setBalance] = useState(0); 
   const [inventory, setInventory] = useState<Artifact[]>([]);
   const [visited, setVisited] = useState<VisitedMap>({});
+  const [shopStates, setShopStates] = useState<Record<string, ShopState>>({}); // New: Shop Stock
   const [detectorExpiry, setDetectorExpiry] = useState<number | null>(null);
   const [sonarExpiry, setSonarExpiry] = useState<number | null>(null);
   const [immunityExpiry, setImmunityExpiry] = useState<number | null>(null); 
@@ -71,6 +72,7 @@ export default function App() {
 
   // Constants
   const CELL_SIZE = 60; // Meters
+  const SHOP_RESTOCK_TIME_MS = 2 * 60 * 60 * 1000; // 2 Hours
 
   useEffect(() => { visitedRef.current = visited; }, [visited]);
   useEffect(() => { posRef.current = pos; }, [pos]);
@@ -107,6 +109,7 @@ export default function App() {
           setBalance(saved.balance);
           setInventory(saved.inventory);
           setVisited(saved.visited);
+          setShopStates(saved.shopStates || {});
           setDetectorExpiry(saved.detectorExpiry);
           setSonarExpiry(saved.sonarExpiry);
           setImmunityExpiry(saved.immunityExpiry);
@@ -126,13 +129,14 @@ export default function App() {
           balance,
           inventory,
           visited,
+          shopStates,
           detectorExpiry,
           sonarExpiry,
           immunityExpiry,
           manualMode,
           xp
       });
-  }, [hp, balance, inventory, visited, detectorExpiry, sonarExpiry, immunityExpiry, manualMode, view, xp]);
+  }, [hp, balance, inventory, visited, shopStates, detectorExpiry, sonarExpiry, immunityExpiry, manualMode, view, xp]);
 
   // Delta clear effects
   useEffect(() => {
@@ -277,14 +281,21 @@ export default function App() {
         setVisited(prev => ({ ...prev, [key]: 'HOSTILE' }));
     }
     
-    if (type === 'SUPERMARKET' && !wasVisited) {
-        setView('SUPERMARKET');
-        setVisited(prev => ({ ...prev, [key]: 'SUPERMARKET' }));
-    }
+    // Check Shop Stock on Entry
+    if ((type === 'SUPERMARKET' || type === 'TOOL_SHOP')) {
+        setShopStates(prev => {
+            const currentShop = prev[key];
+            if (currentShop && currentShop.restockTime < Date.now()) {
+                // Restock!
+                return { ...prev, [key]: { restockTime: 0, soldOutItemIds: [] } };
+            }
+            return prev;
+        });
 
-    if (type === 'TOOL_SHOP' && !wasVisited) {
-        setView('TOOL_SHOP');
-        setVisited(prev => ({ ...prev, [key]: 'TOOL_SHOP' }));
+        if (!wasVisited) {
+            setView(type);
+            setVisited(prev => ({ ...prev, [key]: type }));
+        }
     }
 
     // Auto-consume food logic (Map Food is generic Fruit)
@@ -366,36 +377,35 @@ export default function App() {
                      const newLife = currentLife - 1000;
                      
                      if (newLife <= 0) {
-                         spoiledNames.push((item.data as ItemData).name);
-                         hasChanges = true;
-                     } else {
-                         // Only mark as change if we are updating life
-                         // React optimization: Does map always create new object ref? Yes. 
-                         // But we want to avoid re-rendering InventoryView if data hasn't structurally changed significantly?
-                         // Actually InventoryView will re-render anyway.
-                         nextInventory.push({ 
-                             ...item, 
-                             data: { ...item.data as ItemData, remainingLifeMs: newLife } 
-                         });
-                         // We track changes implicitly by the fact we are in this loop
-                         // However, to avoid replacing state if NO food exists, we can optimize.
+                         // Only alert once when it crosses 0, but here we run every sec.
+                         // Spoilage logic: if it was > 0 and now <= 0.
+                         // But for simplicity, we just update. The "Spoiled" status is derived from <= 0.
+                         if (currentLife > 0) {
+                             spoiledNames.push((item.data as ItemData).name);
+                             hasChanges = true;
+                         }
                      }
+                     
+                     // Keep updating even if negative (to show how long ago it spoiled?)
+                     // Or clamp at 0. Let's clamp at -1 to indicate spoiled.
+                     // Actually, keeping it counting down negatively allows "Spoiled 5 mins ago".
+                     nextInventory.push({ 
+                         ...item, 
+                         data: { ...item.data as ItemData, remainingLifeMs: newLife } 
+                     });
                  } else {
                      nextInventory.push(item);
                  }
              }
 
              if (spoiledNames.length > 0) {
-                 // Hack to log without side-effecting inside reducer
                  setTimeout(() => {
                      spoiledNames.forEach(n => addLog(`Pantry Alert: ${n} spoiled.`));
                  }, 0);
                  return nextInventory;
              }
-
-             // If we had food items, we updated them. If not, return prev.
-             // Simple check: did we rebuild the array to be different length? Or changed data?
-             // If we had any food with remainingLifeMs, we changed data.
+             
+             // To prevent re-renders every second if no food, only return new array if we had food updates
              const hadFood = currentInventory.some(i => i.type === ArtifactType.FOOD && (i.data as ItemData).remainingLifeMs !== undefined);
              return hadFood ? nextInventory : currentInventory;
         });
@@ -556,11 +566,9 @@ export default function App() {
           
           if (minDistanceMeters <= MAX_RANGE) {
               playBeep();
-              // Trigger vibration alongside audio beep
               Haptics.vibrate({ duration: 50 }).catch(() => {
                   if (navigator.vibrate) navigator.vibrate(50);
               });
-              
               const t = minDistanceMeters / MAX_RANGE; 
               const interval = 100 + (Math.pow(t, 2) * 1900);
               timeoutId = setTimeout(pingLoop, interval);
@@ -650,6 +658,11 @@ export default function App() {
       addLog(`Assets Liquidated. +$${value.toLocaleString()}.`);
   };
   
+  const handleDiscard = (item: Artifact) => {
+      setInventory(prev => prev.filter(i => i.id !== item.id));
+      addLog(`${(item.data as ItemData).name} Discarded.`);
+  };
+  
   // --- INVENTORY ACTIONS ---
   
   const handleUseItem = (item: Artifact) => {
@@ -685,6 +698,28 @@ export default function App() {
           return;
       }
       
+      // SHOP STOCK LOGIC
+      // 1. Get current shop key
+      const key = currentKey;
+      
+      setShopStates(prev => {
+          const currentState = prev[key] || { restockTime: 0, soldOutItemIds: [] };
+          
+          // Set restock time if not already set or expired
+          let newRestockTime = currentState.restockTime;
+          if (newRestockTime < Date.now()) {
+              newRestockTime = Date.now() + SHOP_RESTOCK_TIME_MS;
+          }
+
+          return {
+              ...prev,
+              [key]: {
+                  restockTime: newRestockTime,
+                  soldOutItemIds: [...currentState.soldOutItemIds, defId]
+              }
+          };
+      });
+
       setBalance(b => b - def.cost);
       
       // Generate the item artifact
@@ -700,7 +735,6 @@ export default function App() {
   };
 
   const handleBuyBoutiqueItem = (item: Artifact) => {
-      // Stub for future functionality
       if (balance < item.monetaryValue) {
           addLog("Insufficient Funds.");
           return;
@@ -859,6 +893,7 @@ export default function App() {
                 onRevive={handleRevive}
                 onPayRevive={handleDirectPayRevive}
                 onSell={handleSell}
+                onDiscard={handleDiscard}
                 balance={balance}
                 
                 onUseItem={handleUseItem}
@@ -887,15 +922,34 @@ export default function App() {
                         </div>
                     </div>
                     
+                    {/* Restock Timer */}
+                    {(() => {
+                        const currentShopState = shopStates[currentKey];
+                        if (currentShopState && currentShopState.restockTime > now) {
+                            const minutesLeft = Math.ceil((currentShopState.restockTime - now) / 60000);
+                            return (
+                                <div className="mb-4 flex items-center gap-2 text-zinc-400 text-xs bg-zinc-900 px-3 py-1 rounded-full border border-zinc-800">
+                                    <Clock size={12} />
+                                    <span>Restock in {Math.floor(minutesLeft / 60)}h {minutesLeft % 60}m</span>
+                                </div>
+                            );
+                        }
+                        return null;
+                    })()}
+                    
                     <div className="w-full space-y-4 mb-8 max-h-[60vh] overflow-y-auto">
                         {(view === 'SUPERMARKET' ? SUPERMARKET_CATALOG : TOOLSHOP_CATALOG).map(item => {
                             const isLocked = currentLevel < item.levelReq;
+                            // Check sold out
+                            const isSoldOut = shopStates[currentKey]?.soldOutItemIds.includes(item.id);
+                            
                             return (
-                                <div key={item.id} className={`bg-zinc-900 border border-zinc-700 p-4 rounded-lg flex items-center justify-between ${isLocked ? 'opacity-50' : 'opacity-100'}`}>
+                                <div key={item.id} className={`bg-zinc-900 border border-zinc-700 p-4 rounded-lg flex items-center justify-between ${isLocked || isSoldOut ? 'opacity-50' : 'opacity-100'}`}>
                                     <div className="flex-1">
                                         <div className="flex items-center gap-2">
                                             <div className="text-white text-sm font-bold">{item.name}</div>
                                             {isLocked && <span className="text-[10px] bg-red-900/50 text-red-400 px-1 rounded">LVL {item.levelReq}</span>}
+                                            {isSoldOut && <span className="text-[10px] bg-zinc-700 text-zinc-300 px-1 rounded">SOLD OUT</span>}
                                         </div>
                                         <div className="text-zinc-500 text-[10px]">{item.description}</div>
                                         {item.shelfLifeMs && (
@@ -908,10 +962,10 @@ export default function App() {
                                         <span className="text-white font-mono text-sm">${item.cost}</span>
                                         <button 
                                             onClick={() => handleBuyItem(item.id, view === 'SUPERMARKET' ? SUPERMARKET_CATALOG : TOOLSHOP_CATALOG)}
-                                            disabled={isLocked || balance < item.cost}
+                                            disabled={isLocked || isSoldOut || balance < item.cost}
                                             className="bg-white text-black hover:bg-zinc-200 disabled:bg-zinc-800 disabled:text-zinc-600 text-[10px] font-bold px-3 py-1 rounded uppercase tracking-wider"
                                         >
-                                            {isLocked ? 'LOCKED' : 'BUY'}
+                                            {isLocked ? 'LOCKED' : isSoldOut ? 'EMPTY' : 'BUY'}
                                         </button>
                                     </div>
                                 </div>

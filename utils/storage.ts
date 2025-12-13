@@ -1,17 +1,24 @@
+
 import { Artifact, ArtifactType } from '../types';
 import { CellType } from './gameLogic';
 
-const STORAGE_KEY = 'c36_save_v2'; // Bumped version for 60m grid update
+const STORAGE_KEY = 'c36_save_v3'; // Bumped version for Shop Stock update
+
+export interface ShopState {
+    restockTime: number; // Timestamp when stock returns
+    soldOutItemIds: string[]; // IDs of items currently sold out
+}
 
 export interface GameState {
     hp: number;
     balance: number;
     inventory: Artifact[];
     visited: Record<string, CellType>;
+    shopStates: Record<string, ShopState>; // New: Track stock per location key "x,y"
     detectorExpiry: number | null;
     sonarExpiry: number | null;
-    immunityExpiry: number | null; // New: Immunity timestamp
-    manualMode: boolean; // Persist dev setting
+    immunityExpiry: number | null; 
+    manualMode: boolean; 
     xp: number;
 }
 
@@ -36,6 +43,7 @@ export const loadGameState = (): GameState | null => {
             balance: typeof state.balance === 'number' ? state.balance : 0,
             inventory: Array.isArray(state.inventory) ? state.inventory : [],
             visited: state.visited || {},
+            shopStates: state.shopStates || {}, // Default empty
             detectorExpiry: state.detectorExpiry || null,
             sonarExpiry: state.sonarExpiry || null,
             immunityExpiry: state.immunityExpiry || null,

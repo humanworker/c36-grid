@@ -2,7 +2,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { Artifact, ArtifactType, CoinData, CoinSize, ItemData } from '../types';
 import { ArtifactRenderer } from './ArtifactRenderer';
-import { X, Check, Palette, Move, Activity, ScanLine, Radar, ChevronDown, ShoppingBag, Info, Circle, Cherry, Skull, ShoppingCart, Wrench } from 'lucide-react';
+import { X, Check, Palette, Move, Activity, ScanLine, Radar, ChevronDown, ShoppingBag, Info, Circle, Cherry, Skull, ShoppingCart, Wrench, Trash2 } from 'lucide-react';
 
 interface InventoryViewProps {
   items: Artifact[];
@@ -12,6 +12,7 @@ interface InventoryViewProps {
   onRevive?: (selectedArtifacts: Artifact[]) => void;
   onPayRevive?: () => void;
   onSell?: (selectedArtifacts: Artifact[]) => void;
+  onDiscard: (item: Artifact) => void; // New Discard Prop
   balance: number;
   
   // Usage Handlers
@@ -63,7 +64,7 @@ const RARITY_GUIDE = [
 
 
 export const InventoryView: React.FC<InventoryViewProps> = ({ 
-  items, boutiqueItems, onClose, mode = 'VIEW', onRevive, onPayRevive, onSell, balance,
+  items, boutiqueItems, onClose, mode = 'VIEW', onRevive, onPayRevive, onSell, onDiscard, balance,
   onUseItem, onBuyBoutiqueItem,
   devInstantScan, onToggleDevInstantScan, onDevAddCash, 
   isDetectorActive, onToggleDetector,
@@ -79,8 +80,8 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
   const [internalMode, setInternalMode] = useState<'VIEW' | 'SELL'>('VIEW');
   const [showDev, setShowDev] = useState(false);
   
-  // State for single item selection in Use mode
-  const [activeItemIndex, setActiveItemIndex] = useState<number | null>(null);
+  // Universal Object Inspection State
+  const [viewArtifact, setViewArtifact] = useState<Artifact | null>(null);
 
   // Determine actual effective mode
   const currentMode = mode === 'VIEW' ? internalMode : mode;
@@ -98,12 +99,29 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
       });
   }, [items, boutiqueItems, currentTab]);
 
+  // Special Handling for Pantry Split
+  const pantryFresh = useMemo(() => {
+      if (currentTab !== 'PANTRY') return [];
+      return displayedItems.filter(i => {
+          const d = i.data as ItemData;
+          return d.remainingLifeMs === undefined || d.remainingLifeMs > 0;
+      });
+  }, [displayedItems, currentTab]);
+
+  const pantrySpoiled = useMemo(() => {
+      if (currentTab !== 'PANTRY') return [];
+      return displayedItems.filter(i => {
+          const d = i.data as ItemData;
+          return d.remainingLifeMs !== undefined && d.remainingLifeMs <= 0;
+      });
+  }, [displayedItems, currentTab]);
+
   // Stats - Calculated from Collection only
   const collectionItems = items.filter(i => i.type === ArtifactType.COIN);
   const totalValue = collectionItems.reduce((acc, curr) => acc + curr.monetaryValue, 0);
   const bestFind = collectionItems.reduce((max, curr) => Math.max(max, curr.monetaryValue), 0);
 
-  // Sorting Logic
+  // Sorting Logic (Only applies to general list, not pantry split which renders differently)
   const sortedItems = useMemo(() => {
     const list = displayedItems.map((item, index) => ({ item, originalIndex: index }));
     
@@ -129,28 +147,26 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
     }
   }, [displayedItems, sort]);
 
-  // Selection Logic (Multi-select for Sell/Revive, Single select for Use)
-  const handleItemClick = (index: number) => {
+  // Selection Logic
+  const handleItemClick = (item: Artifact, indexInList: number) => {
     // If selling or reviving, use multi-select
     if (currentMode === 'SELL' || currentMode === 'REVIVE') {
         const newSet = new Set(selectedIndices);
-        if (newSet.has(index)) {
-            newSet.delete(index);
+        if (newSet.has(indexInList)) {
+            newSet.delete(indexInList);
         } else {
-            newSet.add(index);
+            newSet.add(indexInList);
         }
         setSelectedIndices(newSet);
     } 
-    // If viewing (Collection/Tools/Pantry), use single select for details/usage
+    // UNIVERSAL OBJECT VIEW: Open Inspection Modal
     else {
-        setActiveItemIndex(index === activeItemIndex ? null : index);
+        setViewArtifact(item);
     }
   };
 
   // Selection Stats
   const selectedValue = Array.from(selectedIndices).reduce<number>((acc, idx) => {
-      // Find item in main list based on index provided by sorted list logic? 
-      // Simplified: We assume indexes passed here map to displayedItems
       const item = displayedItems[idx];
       return acc + (item ? item.monetaryValue : 0);
   }, 0);
@@ -223,16 +239,80 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
           if (hours >= 1) return `${hours} Hours`;
           return `${Math.floor(msLeft / (1000 * 60))} Mins`;
       }
-      // Legacy Fallback
-      if (data.spoilageTimestamp) {
-          const msLeft = data.spoilageTimestamp - Date.now();
-          if (msLeft <= 0) return "Spoiled";
-          const hours = Math.floor(msLeft / (1000 * 60 * 60));
-          if (hours > 24) return `${Math.floor(hours / 24)} Days`;
-          if (hours > 0) return `${hours} Hours`;
-          return `${Math.floor(msLeft / (1000 * 60))} Mins`;
-      }
       return null;
+  };
+
+  // --- SUB-COMPONENT: Item Grid Tile ---
+  const ItemTile = ({ item, indexInList }: { item: Artifact, indexInList: number }) => {
+      const isSelected = selectedIndices.has(indexInList);
+      const details = getArtifactDetails(item);
+      const spoilage = item.type === ArtifactType.FOOD ? getSpoilageTime(item) : null;
+      const isBoutique = currentTab === 'BOUTIQUE';
+      
+      // Determine if spoiled for styling
+      const isSpoiled = item.type === ArtifactType.FOOD && (item.data as ItemData).remainingLifeMs !== undefined && (item.data as ItemData).remainingLifeMs! <= 0;
+
+      return (
+        <button 
+            onClick={() => handleItemClick(item, indexInList)}
+            // Disable clicking for Sell/Revive if not in collection/valid
+            disabled={currentMode !== 'VIEW' && currentTab !== 'COLLECTION'}
+            className={`flex flex-col gap-2 group relative text-left w-full`}
+        >
+            <div className={`aspect-square bg-zinc-900 rounded-lg border relative overflow-hidden flex items-center justify-center transition-all ${
+                (isSelected)
+                    ? 'border-white border-4 bg-zinc-800' 
+                    : isSpoiled ? 'border-red-900/50 opacity-70' : 'border-zinc-800 group-hover:border-zinc-600'
+            }`}>
+                {/* Selection Overlay */}
+                {isSelected && (
+                    <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/10">
+                        <div className="bg-black rounded-full p-1">
+                            <Check size={20} className="text-white" strokeWidth={4} />
+                        </div>
+                    </div>
+                )}
+
+                {/* Artifact Render */}
+                <div className={`aspect-square flex items-center justify-center pointer-events-none transition-opacity ${isSelected ? 'opacity-60' : 'opacity-100'} ${getSizeClass(item)}`}>
+                    <ArtifactRenderer artifact={item} className="w-full h-full" />
+                </div>
+
+                {/* Rarity/Cost Badge */}
+                {item.type === ArtifactType.COIN ? (
+                    <div className="absolute top-1 right-1 px-1 bg-black/80 border border-zinc-800 rounded text-[9px] text-yellow-500 font-mono backdrop-blur-sm">
+                        {item.rarityScore.toFixed(1)}
+                    </div>
+                ) : isBoutique ? (
+                    <div className="absolute top-1 right-1 px-1 bg-black/80 border border-zinc-800 rounded text-[9px] text-green-400 font-mono backdrop-blur-sm">
+                        ${item.monetaryValue}
+                    </div>
+                ) : null}
+                
+                {/* Spoilage Warning */}
+                {spoilage && (
+                    <div className="absolute bottom-1 left-1 right-1 bg-green-900/80 text-[8px] text-white text-center rounded px-1">
+                        {spoilage}
+                    </div>
+                )}
+                {isSpoiled && (
+                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                         <span className="text-red-500 font-bold text-xs uppercase -rotate-12 border-2 border-red-500 px-2 rounded">Spoiled</span>
+                     </div>
+                )}
+            </div>
+            {/* Details */}
+            <div className="px-1 w-full">
+                <div className="flex justify-between items-baseline">
+                    <span className="text-[10px] text-white font-bold truncate">{details.title}</span>
+                    {item.type === ArtifactType.COIN && <span className="text-[10px] text-white font-mono">${item.monetaryValue.toLocaleString()}</span>}
+                </div>
+                <div className="text-[8px] text-zinc-500 truncate">
+                    {details.subtitle}
+                </div>
+            </div>
+        </button>
+      );
   };
 
   return (
@@ -292,7 +372,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                         {(['COLLECTION', 'TOOLS', 'PANTRY', 'BOUTIQUE', 'GUIDE'] as Tab[]).map(tab => (
                             <button
                                 key={tab}
-                                onClick={() => { setCurrentTab(tab); setIsDropdownOpen(false); setActiveItemIndex(null); }}
+                                onClick={() => { setCurrentTab(tab); setIsDropdownOpen(false); }}
                                 className={`text-left px-4 py-3 text-xs font-bold tracking-wider hover:bg-zinc-800 ${currentTab === tab ? 'text-white bg-zinc-800' : 'text-zinc-500'}`}
                             >
                                 {tab}
@@ -431,8 +511,57 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                     </div>
                 </div>
             </div>
+        ) : currentTab === 'PANTRY' ? (
+             // --- PANTRY VIEW (SPLIT) ---
+             <div className="space-y-8 animate-in fade-in duration-300">
+                 
+                 {/* FRESH FOOD */}
+                 <div className="space-y-4">
+                     <div className="text-[10px] text-green-400 font-bold uppercase tracking-wider border-b border-zinc-800 pb-1">Fresh Provisions</div>
+                     {pantryFresh.length === 0 ? (
+                         <div className="text-zinc-700 text-[10px] italic">No fresh food items.</div>
+                     ) : (
+                         <div className="grid grid-cols-3 gap-3">
+                             {pantryFresh.map(item => {
+                                 // Find original index to maintain consistent selection handling if we needed it, 
+                                 // but pantry items are handled by object view now.
+                                 // We just pass -1 for indexInList because multiselect isn't primary here,
+                                 // or find it in main array if needed.
+                                 return <ItemTile key={item.id} item={item} indexInList={-1} />;
+                             })}
+                         </div>
+                     )}
+                 </div>
+
+                 {/* SPOILED FOOD */}
+                 <div className="space-y-4">
+                     <div className="text-[10px] text-red-500 font-bold uppercase tracking-wider border-b border-zinc-800 pb-1 flex justify-between items-center">
+                         <span>Spoiled</span>
+                         <span className="text-[9px] text-zinc-600 normal-case font-normal">Discard to clean inventory</span>
+                     </div>
+                     {pantrySpoiled.length === 0 ? (
+                         <div className="text-zinc-700 text-[10px] italic">No spoiled items.</div>
+                     ) : (
+                         <div className="grid grid-cols-3 gap-3">
+                             {pantrySpoiled.map(item => {
+                                 return (
+                                     <div key={item.id} className="relative group">
+                                         <ItemTile item={item} indexInList={-1} />
+                                         <button 
+                                            onClick={(e) => { e.stopPropagation(); onDiscard(item); }}
+                                            className="absolute top-2 right-2 bg-red-600 text-white p-2 rounded-full shadow-lg z-20 hover:bg-red-500"
+                                         >
+                                             <Trash2 size={16} />
+                                         </button>
+                                     </div>
+                                 );
+                             })}
+                         </div>
+                     )}
+                 </div>
+             </div>
         ) : (
-            // Standard Grid
+            // --- STANDARD GRID (Collection, Tools, Boutique) ---
             sortedItems.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-zinc-700 space-y-2 opacity-50">
                 <div className="text-xs font-mono tracking-widest uppercase">
@@ -441,78 +570,15 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
             </div>
             ) : (
             <div className="grid grid-cols-3 gap-3">
-                {sortedItems.map(({ item, originalIndex }, idx) => {
-                const isSelected = selectedIndices.has(originalIndex);
-                const isActive = activeItemIndex === originalIndex;
-                const details = getArtifactDetails(item);
-                const spoilage = item.type === ArtifactType.FOOD ? getSpoilageTime(item) : null;
-                const isBoutique = currentTab === 'BOUTIQUE';
-                
-                return (
-                    <button 
-                        key={item.id} 
-                        onClick={() => handleItemClick(originalIndex)}
-                        // Disable clicking for Sell/Revive if not in collection (though they are filtered out anyway)
-                        disabled={currentMode === 'VIEW' ? false : currentTab !== 'COLLECTION'}
-                        className={`flex flex-col gap-2 group relative text-left ${currentMode === 'VIEW' ? 'cursor-pointer' : 'cursor-pointer'}`}
-                    >
-                        {/* Thumbnail */}
-                        <div className={`aspect-square bg-zinc-900 rounded-lg border relative overflow-hidden flex items-center justify-center transition-all ${
-                            (isSelected || isActive)
-                                ? 'border-white border-4 bg-zinc-800' 
-                                : 'border-zinc-800 group-hover:border-zinc-600'
-                        }`}>
-                            {/* Selection Overlay */}
-                            {isSelected && (
-                                <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/10">
-                                    <div className="bg-black rounded-full p-1">
-                                        <Check size={20} className="text-white" strokeWidth={4} />
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Artifact Render */}
-                            <div className={`aspect-square flex items-center justify-center pointer-events-none transition-opacity ${isSelected ? 'opacity-60' : 'opacity-100'} ${getSizeClass(item)}`}>
-                                <ArtifactRenderer artifact={item} className="w-full h-full" />
-                            </div>
-
-                            {/* Rarity/Cost Badge */}
-                            {item.type === ArtifactType.COIN ? (
-                                <div className="absolute top-1 right-1 px-1 bg-black/80 border border-zinc-800 rounded text-[9px] text-yellow-500 font-mono backdrop-blur-sm">
-                                    {item.rarityScore.toFixed(1)}
-                                </div>
-                            ) : isBoutique ? (
-                                <div className="absolute top-1 right-1 px-1 bg-black/80 border border-zinc-800 rounded text-[9px] text-green-400 font-mono backdrop-blur-sm">
-                                    ${item.monetaryValue}
-                                </div>
-                            ) : null}
-                            
-                            {/* Spoilage Warning */}
-                            {spoilage && (
-                                <div className="absolute bottom-1 left-1 right-1 bg-red-900/80 text-[8px] text-white text-center rounded px-1">
-                                    {spoilage}
-                                </div>
-                            )}
-                        </div>
-                        {/* Details */}
-                        <div className="px-1">
-                            <div className="flex justify-between items-baseline">
-                                <span className="text-[10px] text-white font-bold truncate">{details.title}</span>
-                                {item.type === ArtifactType.COIN && <span className="text-[10px] text-white font-mono">${item.monetaryValue.toLocaleString()}</span>}
-                            </div>
-                            <div className="text-[8px] text-zinc-500 truncate">
-                                {details.subtitle}
-                            </div>
-                        </div>
-                    </button>
-                );
-                })}
+                {sortedItems.map(({ item, originalIndex }) => (
+                    <ItemTile key={item.id} item={item} indexInList={originalIndex} />
+                ))}
             </div>
             )
         )}
       </div>
 
-      {/* Footer Action */}
+      {/* Footer Action for Multi-Select (Sell/Revive) */}
       {(isRevive || isSell) && (
           <div className="absolute bottom-0 left-0 w-full bg-zinc-900 border-t border-zinc-800 p-4 pb-8 shadow-xl z-50">
               {!(isRevive && canAffordCash) && (
@@ -541,44 +607,113 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
           </div>
       )}
 
-      {/* Use / Buy Footer */}
-      {!isRevive && !isSell && activeItemIndex !== null && (
-         <div className="absolute bottom-0 left-0 w-full bg-zinc-900 border-t border-zinc-800 p-4 pb-8 shadow-xl z-50 animate-in slide-in-from-bottom duration-200">
-             {(() => {
-                 const item = displayedItems[activeItemIndex];
-                 if (!item) return null;
-                 const isFood = item.type === ArtifactType.FOOD;
-                 const isTool = item.type === ArtifactType.TOOL;
-                 const isBoutique = currentTab === 'BOUTIQUE';
+      {/* UNIVERSAL OBJECT DETAIL VIEW MODAL */}
+      {viewArtifact && (
+          <div className="absolute inset-0 z-[60] bg-black/95 backdrop-blur-sm flex flex-col items-center justify-center p-6 animate-in fade-in zoom-in duration-200">
+              
+              <div className="w-full max-w-sm flex flex-col items-center">
+                  {/* Type Label */}
+                  <div className="text-white text-xs tracking-widest uppercase mb-8 border-b border-white pb-2 w-full text-center">
+                      {viewArtifact.type} INSPECTION
+                  </div>
+                  
+                  {/* Large Render */}
+                  <div className="w-64 h-64 flex items-center justify-center mb-8 relative">
+                      <ArtifactRenderer artifact={viewArtifact} className="w-full h-full drop-shadow-2xl" />
+                      
+                      {/* Special Overlays for Object View */}
+                      {viewArtifact.type === ArtifactType.FOOD && (viewArtifact.data as ItemData).remainingLifeMs !== undefined && (viewArtifact.data as ItemData).remainingLifeMs! <= 0 && (
+                           <div className="absolute inset-0 flex items-center justify-center">
+                               <div className="bg-red-900/80 border-2 border-red-500 text-white font-bold text-xl uppercase px-4 py-2 rotate-[-12deg] rounded">SPOILED</div>
+                           </div>
+                      )}
+                  </div>
+                  
+                  {/* Info Block */}
+                  {viewArtifact.type === ArtifactType.COIN ? (
+                       <div className="text-center space-y-2 mb-8">
+                          <h2 className="text-2xl font-bold text-white">{(viewArtifact.data as CoinData).metal} Coin</h2>
+                          <p className="text-white text-xs uppercase flex items-center justify-center gap-2 text-zinc-400">
+                              {(viewArtifact.data as CoinData).condition} • {(viewArtifact.data as CoinData).year > 0 ? `${(viewArtifact.data as CoinData).year} AD` : `${Math.abs((viewArtifact.data as CoinData).year)} BC`}
+                          </p>
+                          <div className="flex gap-2 justify-center mt-2">
+                                <span className="px-2 py-0.5 bg-zinc-900 border border-zinc-800 rounded text-[10px] text-yellow-500 font-mono">
+                                  Score: {viewArtifact.rarityScore.toFixed(1)}
+                                </span>
+                                <span className="px-2 py-0.5 bg-zinc-900 border border-zinc-800 rounded text-[10px] text-green-400 font-mono">
+                                  ${viewArtifact.monetaryValue.toLocaleString()}
+                                </span>
+                          </div>
+                      </div>
+                  ) : (
+                      <div className="text-center space-y-2 mb-8">
+                          <h2 className="text-2xl font-bold text-white">{(viewArtifact.data as ItemData).name}</h2>
+                          <p className="text-zinc-400 text-xs px-4">
+                              {(viewArtifact.data as ItemData).description}
+                          </p>
+                          {(viewArtifact.type === ArtifactType.FOOD) && (
+                              <div className="text-[10px] text-zinc-500 mt-2">
+                                  {getSpoilageTime(viewArtifact)}
+                              </div>
+                          )}
+                      </div>
+                  )}
+                  
+                  {/* Action Buttons */}
+                  <div className="w-full flex gap-3">
+                      <button 
+                          onClick={() => setViewArtifact(null)}
+                          className="flex-1 bg-zinc-800 text-white font-bold py-3 rounded uppercase text-xs tracking-widest hover:bg-zinc-700"
+                      >
+                          Close
+                      </button>
+                      
+                      {(() => {
+                          const isFood = viewArtifact.type === ArtifactType.FOOD;
+                          const isTool = viewArtifact.type === ArtifactType.TOOL;
+                          const isBoutique = currentTab === 'BOUTIQUE';
+                          const isSpoiled = isFood && (viewArtifact.data as ItemData).remainingLifeMs !== undefined && (viewArtifact.data as ItemData).remainingLifeMs! <= 0;
 
-                 if (isBoutique) {
-                     return (
-                        <button
-                            onClick={() => { onBuyBoutiqueItem(item); setActiveItemIndex(null); }}
-                            disabled={balance < item.monetaryValue}
-                            className={`w-full h-12 rounded font-bold tracking-widest uppercase transition-all flex items-center justify-center gap-2 ${
-                                balance >= item.monetaryValue ? 'bg-white text-black hover:bg-zinc-200' : 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
-                            }`}
-                        >
-                            <ShoppingBag size={16} /> BUY (${item.monetaryValue})
-                        </button>
-                     )
-                 }
+                          if (isBoutique) {
+                               return (
+                                  <button
+                                      onClick={() => { onBuyBoutiqueItem(viewArtifact); setViewArtifact(null); }}
+                                      disabled={balance < viewArtifact.monetaryValue}
+                                      className={`flex-[2] rounded font-bold tracking-widest uppercase text-xs transition-all flex items-center justify-center gap-2 ${
+                                          balance >= viewArtifact.monetaryValue ? 'bg-white text-black hover:bg-zinc-200' : 'bg-zinc-700 text-zinc-500 cursor-not-allowed'
+                                      }`}
+                                  >
+                                      BUY (${viewArtifact.monetaryValue})
+                                  </button>
+                               )
+                          }
+                          
+                          if (isSpoiled) {
+                              return (
+                                  <button
+                                      onClick={() => { onDiscard(viewArtifact); setViewArtifact(null); }}
+                                      className="flex-[2] bg-red-600 text-white font-bold py-3 rounded uppercase text-xs tracking-widest hover:bg-red-500 flex items-center justify-center gap-2"
+                                  >
+                                      <Trash2 size={16} /> Discard
+                                  </button>
+                              );
+                          }
 
-                 if (isFood || isTool) {
-                     return (
-                        <button
-                            onClick={() => { onUseItem(item); setActiveItemIndex(null); }}
-                            className="w-full h-12 rounded font-bold tracking-widest uppercase transition-all bg-white text-black hover:bg-zinc-200 flex items-center justify-center gap-2"
-                        >
-                            {isFood ? 'Eat' : 'Use'}
-                        </button>
-                     )
-                 }
-
-                 return null;
-             })()}
-         </div>
+                          if (isFood || isTool) {
+                               return (
+                                  <button
+                                      onClick={() => { onUseItem(viewArtifact); setViewArtifact(null); }}
+                                      className="flex-[2] bg-white text-black font-bold py-3 rounded uppercase text-xs tracking-widest hover:bg-zinc-200"
+                                  >
+                                      {isFood ? 'Consume' : 'Activate'}
+                                  </button>
+                               )
+                          }
+                          return null;
+                      })()}
+                  </div>
+              </div>
+          </div>
       )}
 
     </div>
